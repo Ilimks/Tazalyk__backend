@@ -1,6 +1,5 @@
-# api/serializers.py
 from rest_framework import serializers
-from .models import Video, Photo, News, Procurement, Vacancy
+from .models import Video, Photo, News, Procurement, LocalAct, Legislation
 
 class VideoSerializer(serializers.ModelSerializer):
     created_at = serializers.DateTimeField(read_only=True)
@@ -8,7 +7,7 @@ class VideoSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Video
-        fields = ['id', 'title', 'description', 'main_video_url', 'gallery_videos', 'thumbnail', 'date', 'created_at', 'updated_at']
+        fields = ['id', 'main_video_url', 'gallery_videos', 'thumbnail', 'date', 'created_at', 'updated_at']
 
 class PhotoSerializer(serializers.ModelSerializer):
     created_at = serializers.DateTimeField(read_only=True)
@@ -16,7 +15,7 @@ class PhotoSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Photo
-        fields = ['id', 'title', 'description', 'main_image', 'gallery_images', 'date', 'created_at', 'updated_at']
+        fields = ['id', 'main_image', 'gallery_images', 'date', 'created_at', 'updated_at']
 
 class NewsSerializer(serializers.ModelSerializer):
     created_at = serializers.DateTimeField(read_only=True)
@@ -33,11 +32,21 @@ class ProcurementSerializer(serializers.ModelSerializer):
     class Meta:
         model = Procurement
         fields = ['id', 'number', 'contractNumber', 'supplier', 'type', 'method', 'status', 'date', 'amount', 'created_at', 'updated_at']
+        read_only_fields = ['number']
 
-class VacancySerializer(serializers.ModelSerializer):
+# ========== ДОКУМЕНТЫ ==========
+class LocalActSerializer(serializers.ModelSerializer):
     created_at = serializers.DateTimeField(read_only=True)
     updated_at = serializers.DateTimeField(read_only=True)
     
     class Meta:
-        model = Vacancy
-        fields = '__all__'
+        model = LocalAct
+        fields = ['id', 'title', 'file_url', 'file_name', 'file_size', 'date', 'created_at', 'updated_at']
+
+class LegislationSerializer(serializers.ModelSerializer):
+    created_at = serializers.DateTimeField(read_only=True)
+    updated_at = serializers.DateTimeField(read_only=True)
+    
+    class Meta:
+        model = Legislation
+        fields = ['id', 'title', 'file_url', 'file_name', 'file_size', 'date', 'created_at', 'updated_at']

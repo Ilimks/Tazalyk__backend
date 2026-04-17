@@ -8,11 +8,14 @@ def home(request):
         'endpoints': {
             'admin': '/admin/',
             'api': '/api/',
+            'api_token': '/api/token/',
+            'api_token_refresh': '/api/token/refresh/',
             'videos': '/api/videos/',
             'photos': '/api/photos/',
             'news': '/api/news/',
             'procurements': '/api/procurements/',
-            'vacancies': '/api/vacancies/',
+            'local_acts': '/api/local-acts/',
+            'legislation': '/api/legislation/',
         }
     })
 
