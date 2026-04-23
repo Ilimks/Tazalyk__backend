@@ -1,6 +1,7 @@
 from django.db import models
 from django.utils import timezone
 import uuid
+import time
 
 class Video(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -39,8 +40,15 @@ class Photo(models.Model):
 
 class News(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    title = models.CharField(max_length=255, verbose_name="Название")
-    description = models.TextField(verbose_name="Описание")
+    
+    # Русский язык (основной)
+    title_ru = models.CharField(max_length=255, verbose_name="Название (Русский)")
+    description_ru = models.TextField(verbose_name="Описание (Русский)")
+    
+    # Кыргызский язык
+    title_ky = models.CharField(max_length=255, verbose_name="Название (Кыргызча)", blank=True, null=True)
+    description_ky = models.TextField(verbose_name="Описание (Кыргызча)", blank=True, null=True)
+    
     image = models.TextField(blank=True, null=True, verbose_name="Изображение (base64)")
     date = models.DateField(verbose_name="Дата")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
@@ -52,7 +60,29 @@ class News(models.Model):
         verbose_name_plural = 'Новости'
     
     def __str__(self):
-        return self.title
+        return self.title_ru
+    
+    @property
+    def title(self):
+        """Для обратной совместимости"""
+        return self.title_ru
+    
+    @property
+    def description(self):
+        """Для обратной совместимости"""
+        return self.description_ru
+    
+    def get_title(self, lang='ru'):
+        """Получить заголовок на нужном языке"""
+        if lang == 'ky' and self.title_ky:
+            return self.title_ky
+        return self.title_ru
+    
+    def get_description(self, lang='ru'):
+        """Получить описание на нужном языке"""
+        if lang == 'ky' and self.description_ky:
+            return self.description_ky
+        return self.description_ru
 
 
 class Procurement(models.Model):

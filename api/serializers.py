@@ -23,7 +23,13 @@ class NewsSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = News
-        fields = ['id', 'title', 'description', 'image', 'date', 'created_at', 'updated_at']
+        fields = [
+            'id', 
+            'title_ru', 'title_ky',
+            'description_ru', 'description_ky',
+            'image', 'date', 
+            'created_at', 'updated_at'
+        ]
 
 class ProcurementSerializer(serializers.ModelSerializer):
     created_at = serializers.DateTimeField(read_only=True)
