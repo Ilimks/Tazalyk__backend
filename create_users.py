@@ -5,6 +5,12 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tazalyk.settings')
 django.setup()
 
 from django.contrib.auth.models import User, Group
+from dotenv import load_dotenv
+from pathlib import Path
+
+# Загружаем .env файл
+env_path = Path(__file__).parent / '.env'
+load_dotenv(env_path)
 
 def create_users_and_groups():
     # Создаем группы
@@ -20,13 +26,13 @@ def create_users_and_groups():
         if created:
             print(f"✅ Создана группа: {group_name}")
     
-    # Создаем пользователей (ЗАМЕНИТЕ ПАРОЛИ НА СВОИ!)
+    # Создаем пользователей (пароли из .env)
     users = [
-        {'username': 'admin', 'password': 'admin3257!@K', 'email': 'admin@tazalyk.kg', 'is_superuser': True, 'is_staff': True, 'groups': []},
-        {'username': 'content_manager', 'password': 'content_manager!@Altuha', 'email': 'content@tazalyk.kg', 'is_superuser': False, 'is_staff': True, 'groups': ['content_managers']},
-        {'username': 'procurement_manager', 'password': 'procurement_manager!@AidarZakupki', 'email': 'procurement@tazalyk.kg', 'is_superuser': False, 'is_staff': True, 'groups': ['procurement_managers']},
-        {'username': 'legal_manager', 'password': 'legal_manager!@Urists', 'email': 'legal@tazalyk.kg', 'is_superuser': False, 'is_staff': True, 'groups': ['legal_managers']},
-        {'username': 'viewer', 'password': 'viewer123321gas@!', 'email': 'viewer@tazalyk.kg', 'is_superuser': False, 'is_staff': False, 'groups': ['viewers']},
+        {'username': 'admin', 'password': os.getenv('ADMIN_PASSWORD', 'admin3257!@K'), 'email': 'admin@tazalyk.kg', 'is_superuser': True, 'is_staff': True, 'groups': []},
+        {'username': 'content_manager', 'password': os.getenv('CONTENT_MANAGER_PASSWORD', 'content_manager!@Altuha'), 'email': 'content@tazalyk.kg', 'is_superuser': False, 'is_staff': True, 'groups': ['content_managers']},
+        {'username': 'procurement_manager', 'password': os.getenv('PROCUREMENT_MANAGER_PASSWORD', 'procurement_manager!@AidarZakupki'), 'email': 'procurement@tazalyk.kg', 'is_superuser': False, 'is_staff': True, 'groups': ['procurement_managers']},
+        {'username': 'legal_manager', 'password': os.getenv('LEGAL_MANAGER_PASSWORD', 'legal_manager!@Urists'), 'email': 'legal@tazalyk.kg', 'is_superuser': False, 'is_staff': True, 'groups': ['legal_managers']},
+        {'username': 'viewer', 'password': os.getenv('VIEWER_PASSWORD', 'viewer123321gas@!'), 'email': 'viewer@tazalyk.kg', 'is_superuser': False, 'is_staff': False, 'groups': ['viewers']},
     ]
     
     for user_data in users:
@@ -45,6 +51,10 @@ def create_users_and_groups():
             print(f"✅ Создан пользователь: {user_data['username']}")
         else:
             print(f"⚠️ Пользователь уже существует: {user_data['username']}")
+        
+        # Обновляем пароль (если нужно)
+        user.set_password(user_data['password'])
+        user.save()
         
         # Добавляем в группы
         for group_name in user_data['groups']:

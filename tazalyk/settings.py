@@ -76,11 +76,14 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'tazalyk.wsgi.application'
 
-# ========== БАЗА ДАННЫХ (SQLite) ==========
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': ENV.get('DB_NAME', 'tazalyk'),        # ← ENV.get, а не os.getenv
+        'USER': ENV.get('DB_USER', 'postgres'),
+        'PASSWORD': ENV.get('DB_PASSWORD', 'mysecretpassword123'),
+        'HOST': ENV.get('DB_HOST', 'localhost'),
+        'PORT': ENV.get('DB_PORT', '5432'),
     }
 }
 
@@ -122,7 +125,11 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://localhost",
     "http://127.0.0.1",
+    "http://localhost:80",           # ← добавить
+    "http://localhost:8000",         # ← добавить
 ]
+
+CORS_ALLOW_ALL_ORIGINS = True  # временно для теста
 CORS_ALLOW_CREDENTIALS = True
 
 # ========== REST FRAMEWORK ==========

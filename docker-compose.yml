@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: tazalyk_db
+    restart: always
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=tazalyk
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=mysecretpassword123
+    ports:
+      - "5432:5432"
+
+  backend:
+    build: .
+    container_name: tazalyk_backend
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_NAME=tazalyk
+      - DB_USER=postgres
+      - DB_PASSWORD=mysecretpassword123
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DJANGO_DEBUG=1
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
+    env_file:
+      - .env
+    depends_on:
+      - db
+    volumes:
+      - .:/app
+
+volumes:
+  postgres_data:
