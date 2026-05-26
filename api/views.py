@@ -8,6 +8,7 @@ from django.contrib.auth import authenticate
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import Video, Photo, News, Procurement, LocalAct, Legislation
+from rest_framework import filters
 from .serializers import *
 import time
 import logging
@@ -61,10 +62,20 @@ class PhotoViewSet(viewsets.ModelViewSet):
 
 # ========== НОВОСТИ ==========
 class NewsViewSet(viewsets.ModelViewSet):
-    queryset = News.objects.all().order_by('-date', '-created_at')
+    queryset = News.objects.all().order_by('-date', '-created_at')   # исправлено
     serializer_class = NewsSerializer
     permission_classes = [AllowAny]
     pagination_class = NewsPagination
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['title_ru', 'title_ky', 'description_ru', 'description_ky']
+    ordering_fields = ['date', 'created_at']
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        year = self.request.query_params.get('year')
+        if year and year.isdigit():
+            queryset = queryset.filter(date__year=year)
+        return queryset
 
 # ========== ЗАКУПКИ ==========
 class ProcurementViewSet(viewsets.ModelViewSet):
