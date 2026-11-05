@@ -1,8 +1,8 @@
 from django.urls import path, include, re_path
 from rest_framework.routers import DefaultRouter
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from django.http import JsonResponse
 from . import views
+from .search import SearchView
 
 router = DefaultRouter()
 router.register(r'videos', views.VideoViewSet)
@@ -19,9 +19,9 @@ def health_check(request):
     })
 
 urlpatterns = [
-    # JWT endpoints
-    path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    # JWT endpoints (с ограничением числа попыток)
+    path('token/', views.ThrottledTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('token/refresh/', views.ThrottledTokenRefreshView.as_view(), name='token_refresh'),
     
     # API endpoints
     re_path(r'^videos/?$', views.VideoViewSet.as_view({'get': 'list', 'post': 'create'})),
@@ -36,8 +36,11 @@ urlpatterns = [
     re_path(r'^local-acts/(?P<pk>[^/.]+)/?$', views.LocalActViewSet.as_view({'get': 'retrieve', 'put': 'update', 'delete': 'destroy'})),
     re_path(r'^legislation/?$', views.LegislationViewSet.as_view({'get': 'list', 'post': 'create'})),
     re_path(r'^legislation/(?P<pk>[^/.]+)/?$', views.LegislationViewSet.as_view({'get': 'retrieve', 'put': 'update', 'delete': 'destroy'})),
+    # PATCH — включить/отключить вакансию одним полем is_active
+    re_path(r'^vacancies/?$', views.VacancyViewSet.as_view({'get': 'list', 'post': 'create'})),
+    re_path(r'^vacancies/(?P<pk>[^/.]+)/?$', views.VacancyViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'})),
     
+    path('search/', SearchView.as_view()),
     path('health/', health_check),
-    path('admin-login/', views.admin_login),
-    path('import-data/', views.import_local_data),
+    path('me/', views.me),
 ]

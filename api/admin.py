@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Video, Photo, News, Procurement, LocalAct, Legislation
+from .models import Video, Photo, News, Procurement, LocalAct, Legislation, Vacancy
 
 class BaseDocumentAdmin(admin.ModelAdmin):
     """Базовый класс для документов"""
@@ -67,3 +67,13 @@ class LocalActAdmin(BaseDocumentAdmin):
 @admin.register(Legislation)
 class LegislationAdmin(BaseDocumentAdmin):
     pass
+
+
+@admin.register(Vacancy)
+class VacancyAdmin(admin.ModelAdmin):
+    list_display = ['title_ru', 'salary_from', 'salary_to', 'is_active', 'created_at']
+    list_filter = ['is_active', 'created_at']
+    list_editable = ['is_active']
+    search_fields = ['title_ru', 'title_ky']
+    ordering = ['-created_at']
+    readonly_fields = ['id', 'created_at', 'updated_at']

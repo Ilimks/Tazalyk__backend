@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Скрипт проверки безопасности Django проекта
 Запуск: python check_security.py
 """
@@ -7,10 +6,8 @@ import os
 import sys
 import re
 
-# Добавляем текущую директорию в путь
 sys.path.insert(0, os.path.dirname(__file__))
 
-# Настраиваем Django окружение
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tazalyk.settings')
 
 try:
@@ -35,7 +32,6 @@ def check_security():
     warnings = []
     good = []
     
-    # 1. Проверка SECRET_KEY
     print("\n1. Проверка SECRET_KEY...")
     if not settings.SECRET_KEY:
         issues.append("❌ SECRET_KEY не установлен!")
@@ -46,14 +42,12 @@ def check_security():
     else:
         good.append("✅ SECRET_KEY настроен корректно")
     
-    # 2. Проверка DEBUG
     print("2. Проверка DEBUG режима...")
     if settings.DEBUG:
         issues.append("❌ DEBUG=True - НИКОГДА не используйте в production!")
     else:
         good.append("✅ DEBUG=False - безопасно для production")
     
-    # 3. Проверка ALLOWED_HOSTS
     print("3. Проверка ALLOWED_HOSTS...")
     if not settings.ALLOWED_HOSTS:
         issues.append("❌ ALLOWED_HOSTS пуст!")
@@ -65,7 +59,6 @@ def check_security():
     else:
         good.append(f"✅ ALLOWED_HOSTS настроен: {', '.join(settings.ALLOWED_HOSTS)}")
     
-    # 4. Проверка HTTPS настроек
     print("4. Проверка HTTPS настроек...")
     if not settings.DEBUG:
         if not settings.SECURE_SSL_REDIRECT:
@@ -90,7 +83,6 @@ def check_security():
     else:
         print("   (Пропущено: режим разработки)")
     
-    # 5. Проверка CORS
     print("5. Проверка CORS настроек...")
     if hasattr(settings, 'CORS_ALLOWED_ORIGINS'):
         cors_origins = settings.CORS_ALLOWED_ORIGINS
@@ -103,7 +95,6 @@ def check_security():
             else:
                 good.append(f"✅ CORS настроен ({len(cors_origins)} origins)")
     
-    # 6. Проверка наличия хардкод паролей
     print("6. Проверка на жестко зашитые пароли...")
     views_path = os.path.join(settings.BASE_DIR, 'api', 'views.py')
     urls_path = os.path.join(settings.BASE_DIR, 'api', 'urls.py')
@@ -113,7 +104,6 @@ def check_security():
         if os.path.exists(filepath):
             with open(filepath, 'r', encoding='utf-8') as f:
                 content = f.read()
-                # Ищем подозрительные паттерны
                 patterns = [
                     (r"password\s*=\s*['\"][^'\"]+['\"]", "прямое присвоение пароля"),
                     (r"admin123|password123|qwerty|123456", "слабый пароль"),
@@ -128,7 +118,6 @@ def check_security():
     else:
         good.append("✅ Жестко зашитые пароли не обнаружены")
     
-    # 7. Проверка базы данных
     print("7. Проверка базы данных...")
     db_engine = settings.DATABASES['default']['ENGINE']
     if 'sqlite3' in db_engine:
@@ -141,7 +130,6 @@ def check_security():
     else:
         warnings.append(f"⚠️ Используется {db_engine} - убедитесь в его надежности")
     
-    # 8. Проверка кэша
     print("8. Проверка кэша...")
     if hasattr(settings, 'CACHES'):
         cache_backend = settings.CACHES['default']['BACKEND']
@@ -150,14 +138,12 @@ def check_security():
         elif 'Redis' in cache_backend:
             good.append("✅ Redis кэш настроен")
     
-    # 9. Проверка пользователей (нет ли дефолтных)
     print("9. Проверка пользователей...")
     try:
         users = User.objects.all()
         if users.count() == 0:
             warnings.append("⚠️ Нет созданных пользователей! Создайте через createsuperuser")
         else:
-            # Проверяем нет ли пользователя admin с паролем admin123
             dangerous_users = []
             for user in users:
                 if user.username in ['admin', 'test', 'user']:
@@ -168,8 +154,7 @@ def check_security():
                 good.append(f"✅ Создано {users.count()} пользователей")
     except Exception as e:
         warnings.append(f"⚠️ Не удалось проверить пользователей: {e}")
-    
-    # 10. Проверка логов
+
     print("10. Проверка системы логирования...")
     log_dir = os.path.join(settings.BASE_DIR, 'logs')
     if not os.path.exists(log_dir):
@@ -177,7 +162,6 @@ def check_security():
     else:
         good.append("✅ Директория логов существует")
     
-    # 11. Проверка версий пакетов
     print("11. Проверка безопасности зависимостей...")
     try:
         print("   Запуск Django安全检查...")
@@ -200,8 +184,7 @@ def check_security():
             warnings.append("⚠️ CSRF_COOKIE_SAMESITE=Lax - рассмотрите Strict")
         else:
             issues.append(f"❌ CSRF_COOKIE_SAMESITE={settings.CSRF_COOKIE_SAMESITE} - небезопасно")
-    
-    # 13. Проверка JWT настроек
+
     print("13. Проверка JWT настроек...")
     if hasattr(settings, 'SIMPLE_JWT'):
         access_lifetime = settings.SIMPLE_JWT.get('ACCESS_TOKEN_LIFETIME')
@@ -211,8 +194,7 @@ def check_security():
                 warnings.append(f"⚠️ JWT access token живет {minutes} минут - рекомендую 15 минут")
             else:
                 good.append(f"✅ JWT access token: {minutes} минут")
-    
-    # Вывод результатов
+ 
     print("\n" + "="*60)
     print("РЕЗУЛЬТАТЫ ПРОВЕРКИ:")
     print("="*60)
@@ -232,7 +214,6 @@ def check_security():
         for item in good:
             print(f"  • {item}")
     
-    # Итоговая оценка
     print("\n" + "="*60)
     if issues:
         print(f"📊 ОЦЕНКА БЕЗОПАСНОСТИ: {max(0, 10 - len(issues) * 2)}/10")

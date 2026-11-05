@@ -1,13 +1,12 @@
 from rest_framework import viewsets, status
-from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated, BasePermission, SAFE_METHODS
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.throttling import AnonRateThrottle
-from django.contrib.auth import authenticate
-from django.views.decorators.csrf import csrf_exempt
-from rest_framework_simplejwt.tokens import RefreshToken
-from .models import Video, Photo, News, Procurement, LocalAct, Legislation
+from rest_framework.throttling import ScopedRateThrottle
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from .models import Video, Photo, News, Procurement, LocalAct, Legislation, Vacancy
+from .security_events import log_login_success, log_login_throttled
 from rest_framework import filters
 from .serializers import *
 import time
@@ -15,34 +14,71 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# ========== ПРАВА ДОСТУПА ==========
+# Какая группа пользователей может менять раздел (группы создаёт create_users.py)
+SECTION_GROUPS = {
+    'videos': 'content_managers',
+    'photos': 'content_managers',
+    'news': 'content_managers',
+    'procurements': 'procurement_managers',
+    'local_acts': 'legal_managers',
+    'legislation': 'legal_managers',
+    # отдел кадров (группу создаёт миграция 0016, сотрудника — manage.py create_hr_user)
+    'vacancies': 'hr_managers',
+}
+
+def can_edit_section(user, section):
+    """Суперпользователь или сотрудник из группы раздела"""
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    return user.groups.filter(name=SECTION_GROUPS[section]).exists()
+
+class SectionPermission(BasePermission):
+    """Читать могут все (сайт), менять — суперпользователь или группа раздела"""
+
+    def has_permission(self, request, view):
+        if request.method in SAFE_METHODS:
+            return True
+        return can_edit_section(request.user, view.section)
+
 # ========== ПАГИНАЦИЯ ==========
-class VideoPagination(PageNumberPagination):
-    page_size = 8
+class MediaPagination(PageNumberPagination):
+    """Записи с файлами в base64 тяжёлые: один запрос на 100 штук весил сотни мегабайт.
+    Посетителям — до 20 записей на страницу, сотрудникам в админке — как раньше."""
     page_size_query_param = 'page_size'
     max_page_size = 100
+    public_max_page_size = 20
 
-class PhotoPagination(PageNumberPagination):
+    def get_page_size(self, request):
+        size = super().get_page_size(request)
+        if request.user and request.user.is_authenticated:
+            return size
+        return min(size, self.public_max_page_size)
+
+class VideoPagination(MediaPagination):
     page_size = 8
-    page_size_query_param = 'page_size'
-    max_page_size = 100
 
-class NewsPagination(PageNumberPagination):
+class PhotoPagination(MediaPagination):
+    page_size = 8
+
+class NewsPagination(MediaPagination):
     page_size = 12
-    page_size_query_param = 'page_size'
-    max_page_size = 100
 
 class ProcurementPagination(PageNumberPagination):
     page_size = 12
     page_size_query_param = 'page_size'
     max_page_size = 100
 
-class LocalActPagination(PageNumberPagination):
+class LocalActPagination(MediaPagination):
     page_size = 10
-    page_size_query_param = 'page_size'
-    max_page_size = 100
 
-class LegislationPagination(PageNumberPagination):
+class LegislationPagination(MediaPagination):
     page_size = 10
+
+class VacancyPagination(PageNumberPagination):
+    page_size = 20
     page_size_query_param = 'page_size'
     max_page_size = 100
 
@@ -50,21 +86,24 @@ class LegislationPagination(PageNumberPagination):
 class VideoViewSet(viewsets.ModelViewSet):
     queryset = Video.objects.all().order_by('-date', '-created_at')
     serializer_class = VideoSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [SectionPermission]
+    section = 'videos'
     pagination_class = VideoPagination
 
 # ========== ФОТО ==========
 class PhotoViewSet(viewsets.ModelViewSet):
     queryset = Photo.objects.all().order_by('-date', '-created_at')
     serializer_class = PhotoSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [SectionPermission]
+    section = 'photos'
     pagination_class = PhotoPagination
 
 # ========== НОВОСТИ ==========
 class NewsViewSet(viewsets.ModelViewSet):
     queryset = News.objects.all().order_by('-date', '-created_at')   # исправлено
     serializer_class = NewsSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [SectionPermission]
+    section = 'news'
     pagination_class = NewsPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['title_ru', 'title_ky', 'description_ru', 'description_ky']
@@ -81,254 +120,111 @@ class NewsViewSet(viewsets.ModelViewSet):
 class ProcurementViewSet(viewsets.ModelViewSet):
     queryset = Procurement.objects.all().order_by('-date', '-created_at')
     serializer_class = ProcurementSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [SectionPermission]
+    section = 'procurements'
     pagination_class = ProcurementPagination
     
     def create(self, request, *args, **kwargs):
-        print("=" * 60)
-        print("📥 ПОЛУЧЕНЫ ДАННЫЕ ОТ ФРОНТЕНДА:")
-        print(request.data)
-        print("=" * 60)
-        
+        # тело запроса в лог не пишем: там данные поставщиков и суммы договоров
         data = request.data.copy()
-        
+
         if 'id' not in data or not data['id']:
             data['id'] = str(int(time.time() * 1000))
-            print(f"🆔 Сгенерирован ID: {data['id']}")
-        
-        if 'number' in data:
-            del data['number']
-            print("🔢 Поле number удалено из запроса (будет сгенерировано автоматически)")
-        
+
+        # номер закупки сервер присваивает сам
+        data.pop('number', None)
+
         required_fields = ['contractNumber', 'supplier', 'type', 'status', 'date', 'amount']
         for field in required_fields:
             if field not in data:
-                print(f"❌ Отсутствует поле: {field}")
                 return Response(
-                    {field: ["This field is required."]}, 
+                    {field: ["This field is required."]},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            print(f"✅ Поле {field}: {data[field]} ({type(data[field])})")
-        
-        if 'amount' in data:
-            try:
-                data['amount'] = float(data['amount'])
-            except:
-                pass
-        
+
+        # сумму не переводим во float — DecimalField сам разбирает строку без потери копеек
         serializer = self.get_serializer(data=data)
         if serializer.is_valid():
             serializer.save()
-            print(f"✅ Данные сохранены успешно! Номер закупки: {serializer.data.get('number')}")
+            logger.info('Procurement created: number=%s by user=%s', serializer.data.get('number'), request.user.pk)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
-        
-        print("❌ ОШИБКИ ВАЛИДАЦИИ:")
-        print(serializer.errors)
-        print("=" * 60)
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 # ========== ЛОКАЛЬНЫЕ АКТЫ ==========
 class LocalActViewSet(viewsets.ModelViewSet):
     queryset = LocalAct.objects.all().order_by('-date', '-created_at')
     serializer_class = LocalActSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [SectionPermission]
+    section = 'local_acts'
     pagination_class = LocalActPagination
 
 # ========== ЗАКОНОДАТЕЛЬСТВО ==========
 class LegislationViewSet(viewsets.ModelViewSet):
     queryset = Legislation.objects.all().order_by('-date', '-created_at')
     serializer_class = LegislationSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [SectionPermission]
+    section = 'legislation'
     pagination_class = LegislationPagination
 
-# ========== БЕЗОПАСНЫЙ АДМИН ЛОГИН (БЕЗ ХАРДКОДА) ==========
-class LoginThrottle(AnonRateThrottle):
-    rate = '5/hour'  # 5 попыток в час
+# ========== ВАКАНСИИ ==========
+class VacancyViewSet(viewsets.ModelViewSet):
+    serializer_class = VacancySerializer
+    permission_classes = [SectionPermission]
+    section = 'vacancies'
+    pagination_class = VacancyPagination
 
-@csrf_exempt
-@api_view(['POST'])
-@throttle_classes([LoginThrottle])
-def admin_login(request):
-    """
-    Безопасная аутентификация через Django Auth
-    Никаких хардкод паролей!
-    """
-    username = request.data.get('username', '')
-    password = request.data.get('password', '')
-    ip = request.META.get('REMOTE_ADDR')
-    
-    logger.info(f'Login attempt from IP: {ip}, username: {username}')
-    
-    # Используем стандартную Django аутентификацию
-    user = authenticate(username=username, password=password)
-    
-    if user and user.is_active:
-        # Генерируем JWT токены
-        refresh = RefreshToken.for_user(user)
-        
-        logger.info(f'Successful login for user: {username} from IP: {ip}')
-        
-        # Определяем права пользователя на основе групп
-        permissions = []
-        if user.is_superuser:
-            permissions = ['*']
-        elif user.groups.filter(name='content_managers').exists():
-            permissions = ['view_videos', 'create_videos', 'edit_videos', 'delete_videos',
-                          'view_photos', 'create_photos', 'edit_photos', 'delete_photos',
-                          'view_news', 'create_news', 'edit_news', 'delete_news']
-        elif user.groups.filter(name='procurement_managers').exists():
-            permissions = ['view_procurements', 'create_procurements', 'edit_procurements', 'delete_procurements']
-        elif user.groups.filter(name='legal_managers').exists():
-            permissions = ['view_local_acts', 'create_local_acts', 'edit_local_acts', 'delete_local_acts',
-                          'view_legislation', 'create_legislation', 'edit_legislation', 'delete_legislation']
-        elif user.groups.filter(name='viewers').exists():
-            permissions = ['view_videos', 'view_photos', 'view_news', 'view_procurements',
-                          'view_local_acts', 'view_legislation']
-        
-        return Response({
-            'success': True,
-            'message': 'Login successful',
-            'access': str(refresh.access_token),
-            'refresh': str(refresh),
-            'user': {
-                'id': user.id,
-                'username': user.username,
-                'email': user.email,
-                'is_staff': user.is_staff,
-                'is_superuser': user.is_superuser,
-                'permissions': permissions
-            }
-        })
-    
-    logger.warning(f'Failed login attempt for user: {username} from IP: {ip}')
-    return Response(
-        {'success': False, 'message': 'Неверный логин или пароль'},
-        status=status.HTTP_401_UNAUTHORIZED
-    )
+    def get_queryset(self):
+        queryset = Vacancy.objects.all().order_by('-created_at')
+        params = self.request.query_params
+        # неактивные вакансии видит только отдел кадров: в списке админки (?all=1) и при редактировании
+        manager_view = can_edit_section(self.request.user, self.section) and (
+            self.action != 'list' or params.get('all') == '1'
+        )
+        if not manager_view:
+            return queryset.filter(is_active=True)
+        # фильтр «активные / неактивные» в админке
+        is_active = params.get('is_active')
+        if self.action == 'list' and is_active in ('1', '0'):
+            queryset = queryset.filter(is_active=is_active == '1')
+        return queryset
 
-# ========== ИМПОРТ ДАННЫХ ==========
-@csrf_exempt
-@api_view(['POST'])
-def import_local_data(request):
-    """Функция для импорта данных из localStorage"""
-    try:
-        data = request.data
-        print("Received data keys:", list(data.keys()))
-        
-        if 'news' in data:
-            print(f"Importing {len(data['news'])} news items")
-            for news_item in data['news']:
-                # Проверяем наличие обязательных полей
-                news_id = news_item.get('id')
-                if not news_id:
-                    continue
-                    
-                News.objects.update_or_create(
-                    id=news_id,
-                    defaults={
-                        'title_ru': news_item.get('title', news_item.get('title_ru', '')),
-                        'description_ru': news_item.get('description', news_item.get('description_ru', '')),
-                        'image': news_item.get('image', ''),
-                        'date': news_item.get('date', '2024-01-01'),
-                    }
-                )
-        
-        if 'videos' in data:
-            print(f"Importing {len(data['videos'])} videos")
-            for video in data['videos']:
-                video_id = video.get('id')
-                if not video_id:
-                    continue
-                    
-                Video.objects.update_or_create(
-                    id=video_id,
-                    defaults={
-                        'main_video_url': video.get('main_video_url', ''),
-                        'gallery_videos': video.get('gallery_videos', []),
-                        'thumbnail': video.get('thumbnail', ''),
-                        'date': video.get('date', '2024-01-01'),
-                    }
-                )
-        
-        if 'photos' in data:
-            print(f"Importing {len(data['photos'])} photos")
-            for photo in data['photos']:
-                photo_id = photo.get('id')
-                if not photo_id:
-                    continue
-                    
-                Photo.objects.update_or_create(
-                    id=photo_id,
-                    defaults={
-                        'main_image': photo.get('main_image', ''),
-                        'gallery_images': photo.get('gallery_images', []),
-                        'date': photo.get('date', '2024-01-01'),
-                    }
-                )
-        
-        if 'procurements' in data:
-            print(f"Importing {len(data['procurements'])} procurements")
-            for proc in data['procurements']:
-                proc_id = proc.get('id')
-                if not proc_id:
-                    continue
-                    
-                Procurement.objects.update_or_create(
-                    id=proc_id,
-                    defaults={
-                        'number': proc.get('number', ''),
-                        'contractNumber': proc.get('contractNumber', proc.get('contract_number', '')),
-                        'supplier': proc.get('supplier', ''),
-                        'type': proc.get('type', 'goods'),
-                        'method': proc.get('method', 'direct'),
-                        'status': proc.get('status', 'active'),
-                        'date': proc.get('date', '2024-01-01'),
-                        'amount': proc.get('amount', 0),
-                    }
-                )
-        
-        if 'local_acts' in data:
-            print(f"Importing {len(data['local_acts'])} local acts")
-            for act in data['local_acts']:
-                act_id = act.get('id')
-                if not act_id:
-                    continue
-                    
-                LocalAct.objects.update_or_create(
-                    id=act_id,
-                    defaults={
-                        'title': act.get('title', ''),
-                        'file_url': act.get('file_url', ''),
-                        'file_name': act.get('file_name', ''),
-                        'file_size': act.get('file_size', 0),
-                        'date': act.get('date', '2024-01-01'),
-                    }
-                )
-        
-        if 'legislation' in data:
-            print(f"Importing {len(data['legislation'])} legislation items")
-            for leg in data['legislation']:
-                leg_id = leg.get('id')
-                if not leg_id:
-                    continue
-                    
-                Legislation.objects.update_or_create(
-                    id=leg_id,
-                    defaults={
-                        'title': leg.get('title', ''),
-                        'file_url': leg.get('file_url', ''),
-                        'file_name': leg.get('file_name', ''),
-                        'file_size': leg.get('file_size', 0),
-                        'date': leg.get('date', '2024-01-01'),
-                    }
-                )
-        
-        return Response({'success': True, 'message': 'Data imported successfully'})
-    
-    except Exception as e:
-        logger.error(f"Import error: {str(e)}")
-        print("Error:", str(e))
-        return Response({'success': False, 'message': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+# ========== ВХОД В АДМИНКУ ==========
+# Стандартный вход simplejwt с ограничением числа попыток: без него пароли можно было перебирать.
+# Лимиты — REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']['login'/'token_refresh'] в settings.py
+class ThrottledTokenObtainPairView(TokenObtainPairView):
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
+
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == 200:
+            log_login_success(request, request.data.get('username'))
+        return response
+
+    def throttled(self, request, wait):
+        log_login_throttled(request)
+        super().throttled(request, wait)
+
+
+class ThrottledTokenRefreshView(TokenRefreshView):
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'token_refresh'
+
+# Импорт из localStorage (/api/import-data/) удалён: любой вошедший сотрудник мог им
+# перезаписать все разделы в обход проверки прав и валидации.
+
+# ========== ТЕКУЩИЙ ПОЛЬЗОВАТЕЛЬ ==========
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def me(request):
+    """Роль сотрудника для админки: суперпользователь и группы (раньше админка угадывала роль по логину)"""
+    user = request.user
+    return Response({
+        'username': user.username,
+        'is_superuser': user.is_superuser,
+        'groups': list(user.groups.values_list('name', flat=True)),
+    })
 
 # ========== HEALTH CHECK ==========
 @api_view(['GET'])

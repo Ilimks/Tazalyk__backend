@@ -1,26 +1,18 @@
+from django.conf import settings
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
 from django.http import JsonResponse
+from django.views.static import serve
 
+# Карту всех адресов (включая /admin/) не публикуем — она только помогает подбирать вход
 def home(request):
-    return JsonResponse({
-        'message': 'Добро пожаловать в API МП "Тазалык"',
-        'endpoints': {
-            'admin': '/admin/',
-            'api': '/api/',
-            'api_token': '/api/token/',
-            'api_token_refresh': '/api/token/refresh/',
-            'videos': '/api/videos/',
-            'photos': '/api/photos/',
-            'news': '/api/news/',
-            'procurements': '/api/procurements/',
-            'local_acts': '/api/local-acts/',
-            'legislation': '/api/legislation/',
-        }
-    })
+    return JsonResponse({'message': 'API МП «Тазалык»'})
 
 urlpatterns = [
     path('', home, name='home'),
     path('admin/', admin.site.urls),
+    path('api/shop/', include('shop.urls')),
     path('api/', include('api.urls')),
+    # Фото товаров магазина. На сервере nginx может отдавать MEDIA_ROOT сам — тогда это правило не сработает.
+    re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
 ]

@@ -8,20 +8,25 @@ services:
     environment:
       - POSTGRES_DB=tazalyk
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=mysecretpassword123
+      # пароль берётся из backend/.env, в репозитории его быть не должно
+      - POSTGRES_PASSWORD=${DB_PASSWORD:?Укажите DB_PASSWORD в backend/.env}
+    # только с этого компьютера: иначе база будет видна всей локальной сети
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
 
   backend:
     build: .
     container_name: tazalyk_backend
     restart: always
+    # сервер разработки перезапускается при правках кода; в образе по умолчанию gunicorn
+    command: python manage.py runserver 0.0.0.0:8000
+    # API для локальной разработки — тоже только с этого компьютера
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       - DB_NAME=tazalyk
       - DB_USER=postgres
-      - DB_PASSWORD=mysecretpassword123
+      - DB_PASSWORD=${DB_PASSWORD:?Укажите DB_PASSWORD в backend/.env}
       - DB_HOST=db
       - DB_PORT=5432
       - DJANGO_DEBUG=1
@@ -34,4 +39,8 @@ services:
       - .:/app
 
 volumes:
+  # основная база с контентом и пользователями (создана ещё в проекте tazalyk_backend);
+  # без явного имени Docker создавал бы новую пустую базу при каждом переименовании папки
   postgres_data:
+    external: true
+    name: tazalyk_backend_postgres_data

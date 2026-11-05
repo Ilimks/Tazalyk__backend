@@ -1,0 +1,15 @@
+# Секреты не должны попадать в образ: на сервере они приходят через env_file в docker-compose
+.env
+.env.*
+.git
+.gitignore
+venv
+.venv
+__pycache__
+*.py[cod]
+logs
+media
+db.sqlite3
+docker-compose*.yml
+Dockerfile
+.dockerignore
