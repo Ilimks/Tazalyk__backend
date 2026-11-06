@@ -5,7 +5,9 @@
 """
 import base64
 import binascii
+import io
 import re
+import zipfile
 
 from rest_framework import serializers
 
@@ -53,6 +55,64 @@ KINDS = {
     'video': (VIDEO_TYPES, 100 * MB),
     'document': (DOCUMENT_TYPES, 50 * MB),
 }
+
+
+# Резюме с сайта: подпись файла, расширение и тип для скачивания. Имени и типу от браузера не верим.
+# Старый .doc не принимаем: в нём бывают макросы, а файл от незнакомого человека открывает сотрудник
+RESUME_MAX_BYTES = 5 * MB
+DOCX_MAX_UNPACKED_BYTES = 50 * MB
+DOCX_MAX_ENTRIES = 2000
+RESUME_TYPES = (
+    (DOCUMENT_TYPES['application/pdf'], 'pdf', 'application/pdf'),
+    (
+        lambda head: head[:4] == b'PK\x03\x04',
+        'docx',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ),
+    (IMAGE_TYPES['image/jpeg'], 'jpg', 'image/jpeg'),
+    (IMAGE_TYPES['image/png'], 'png', 'image/png'),
+)
+
+
+def detect_resume_type(content):
+    """Расширение и тип файла по его началу; None — такой файл не принимаем"""
+    for signature_ok, extension, content_type in RESUME_TYPES:
+        if signature_ok(content[:16]):
+            return extension, content_type
+    return None
+
+
+# Внешние ссылки документа. Обычные гиперссылки безопасны, а шаблон или объект с чужого адреса
+# Word загружает сам, как только документ открыли
+EXTERNAL_RELATION_RE = re.compile(rb'<Relationship\b[^>]*TargetMode="External"[^>]*>')
+RELATION_TYPE_RE = re.compile(rb'Type="[^"]*/([A-Za-z]+)"')
+
+
+def is_safe_docx(content):
+    """Настоящий документ Word без макросов, вложенных программ и загрузки с чужих адресов"""
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            entries = archive.infolist()
+            if len(entries) > DOCX_MAX_ENTRIES or sum(item.file_size for item in entries) > DOCX_MAX_UNPACKED_BYTES:
+                return False
+
+            names = {item.filename.lower() for item in entries}
+            if not {'[content_types].xml', 'word/document.xml'} <= names:
+                return False
+            if any(name.endswith('vbaproject.bin') or '/embeddings/oleobject' in name for name in names):
+                return False
+
+            for item in entries:
+                if not item.filename.lower().endswith('.rels'):
+                    continue
+                for relation in EXTERNAL_RELATION_RE.findall(archive.read(item)):
+                    kind = RELATION_TYPE_RE.search(relation)
+                    if not kind or kind.group(1) != b'hyperlink':
+                        return False
+    except (zipfile.BadZipFile, zipfile.LargeZipFile, RuntimeError, NotImplementedError, EOFError, ValueError):
+        # повреждённый или защищённый паролем архив проверить нельзя
+        return False
+    return True
 
 
 def validate_media(value, kind):

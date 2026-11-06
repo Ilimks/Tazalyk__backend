@@ -8,7 +8,7 @@ from django.core.files.base import ContentFile
 from django.db import transaction
 from rest_framework import serializers
 
-from .contacts import customer_links, is_valid_phone
+from .contacts import customer_links, is_valid_phone, PHONE_RE
 from .models import Order, OrderItem, Product
 
 # ========== ФОТО ТОВАРА ==========
@@ -83,7 +83,6 @@ class ProductSerializer(serializers.ModelSerializer):
 
 
 # ========== ЗАКАЗЫ ==========
-PHONE_RE = re.compile(r'^\+?[0-9\s\-()]{7,20}$')
 TELEGRAM_RE = re.compile(r'^@?[A-Za-z0-9_]{5,32}$')
 MAX_ORDER_LINES = 20
 

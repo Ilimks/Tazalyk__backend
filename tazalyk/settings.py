@@ -180,13 +180,19 @@ CORS_ALLOWED_ORIGINS = [
 ]
 CORS_ALLOW_ALL_ORIGINS = False
 # вход по JWT в заголовке Authorization — cookie браузеру передавать не нужно
-CORS_ALLOW_CREDENTIALS = False
+# cookie входа принимаются только из панели управления: см. api/authentication.py
+CORS_ALLOW_CREDENTIALS = True
 CORS_URLS_REGEX = r'^/(api|media)/.*$'
 
 # ========== REST FRAMEWORK ==========
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'api.authentication.CookieJWTAuthentication',
+    ],
+    'DEFAULT_PARSER_CLASSES': [
+        'api.parsers.SafeJSONParser',
+        'rest_framework.parsers.FormParser',
+        'rest_framework.parsers.MultiPartParser',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
@@ -204,6 +210,8 @@ REST_FRAMEWORK = {
         'anon': '600/min',
         # оформление заказов в магазине с одного адреса
         'shop_orders': '10/hour',
+        # резюме с сайта: посетитель может откликнуться на несколько вакансий, бот — нет
+        'vacancy_applications': '10/hour',
         # попытки входа в админку с одного адреса — защита от подбора пароля
         'login': '5/min',
         'token_refresh': '30/min',
@@ -230,7 +238,20 @@ SHOP_WHATSAPP_PHONE = ENV.get('SHOP_WHATSAPP_PHONE', '')
 # Пусто — адрес берётся из запроса (локально http://localhost:8000).
 PUBLIC_MEDIA_BASE_URL = ENV.get('PUBLIC_MEDIA_BASE_URL', '')
 
+# ========== ОТКЛИКИ НА ВАКАНСИИ ==========
+# Сколько резюме в байтах можно принять за сутки со всех адресов вместе
+APPLICATIONS_DAILY_BYTES = int(ENV.get('APPLICATIONS_DAILY_BYTES', str(300 * 1024 * 1024)))
+
 # ========== JWT ==========
+# Откуда принимаются cookie входа. Локально: ADMIN_ORIGINS=http://localhost
+ADMIN_ORIGINS = [
+    origin.strip()
+    for origin in ENV.get('ADMIN_ORIGINS', 'https://admin.mptazalyk.kg').split(',')
+    if origin.strip()
+]
+# без https cookie с Secure браузер не отправит: локально AUTH_COOKIE_SECURE=False
+AUTH_COOKIE_SECURE = ENV.get('AUTH_COOKIE_SECURE', 'True') == 'True'
+
 SIMPLE_JWT = {
     # короткий токен доступа: украденный токен быстрее перестаёт работать (админка обновляет его сама)
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
@@ -238,6 +259,8 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
+    # после смены пароля все выданные токены перестают действовать
+    'CHECK_REVOKE_TOKEN': True,
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
     'AUTH_HEADER_TYPES': ('Bearer',),

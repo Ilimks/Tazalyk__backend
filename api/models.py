@@ -189,3 +189,47 @@ class Vacancy(models.Model):
 
     def __str__(self):
         return self.title_ru
+
+
+# ========== ОТКЛИКИ НА ВАКАНСИИ ==========
+class VacancyApplication(models.Model):
+    STATUS_CHOICES = [
+        ('new', 'Новый'),
+        ('in_review', 'На рассмотрении'),
+        ('invited', 'Приглашён'),
+        ('hired', 'Принят'),
+        ('rejected', 'Отказ'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # вакансию могут удалить, поэтому название копируется в отклик
+    vacancy = models.ForeignKey(
+        Vacancy, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='applications', verbose_name="Вакансия",
+    )
+    vacancy_title = models.CharField(max_length=200, verbose_name="Название вакансии")
+    full_name = models.CharField(max_length=150, verbose_name="ФИО")
+    phone = models.CharField(max_length=30, verbose_name="Телефон")
+    email = models.EmailField(blank=True, verbose_name="Электронная почта")
+    comment = models.TextField(blank=True, verbose_name="Комментарий кандидата")
+    # резюме — личные данные: файл лежит в базе, а не в публичной папке /media/,
+    # поэтому получить его можно только через API с правами отдела кадров
+    resume_content = models.BinaryField(verbose_name="Файл резюме")
+    resume_name = models.CharField(max_length=255, verbose_name="Имя файла")
+    resume_type = models.CharField(max_length=100, verbose_name="Тип файла")
+    resume_size = models.PositiveIntegerField(verbose_name="Размер файла, байт")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new', verbose_name="Статус")
+    hr_note = models.TextField(blank=True, verbose_name="Заметка отдела кадров")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата отклика")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Отклик на вакансию'
+        verbose_name_plural = 'Отклики на вакансии'
+        indexes = [
+            models.Index(fields=['status', '-created_at'], name='api_application_status_created'),
+        ]
+
+    def __str__(self):
+        return f'{self.full_name} — {self.vacancy_title}'

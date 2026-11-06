@@ -6,6 +6,7 @@ from django.conf import settings
 
 # ссылка с текстом не должна быть слишком длинной: мессенджеры обрезают такие адреса
 MAX_MESSAGE_ITEMS = 5
+PHONE_RE = re.compile(r'^\+?[0-9\s\-()]{7,20}$')
 MIN_PHONE_DIGITS = 11
 MAX_PHONE_DIGITS = 15
 

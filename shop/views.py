@@ -7,6 +7,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 
+from .exports import orders_export_response
 from .models import Order, Product
 from .permissions import OrderPermission, ProductPermission, is_shop_manager
 from .serializers import OrderCreateSerializer, OrderSerializer, ProductSerializer
@@ -143,6 +144,11 @@ class OrderViewSet(
 
     def get_serializer_class(self):
         return OrderCreateSerializer if self.action == 'create' else OrderSerializer
+
+    @action(detail=False, methods=['get'], url_path='export')
+    def export(self, request):
+        """GET /api/shop/orders/export/ — проданные и отклонённые товары файлом .xlsx"""
+        return orders_export_response()
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)

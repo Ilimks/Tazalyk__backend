@@ -112,7 +112,7 @@ class CreateHrUserCommandTests(APITestCase):
 
         res = self.client.post('/api/token/', {'username': 'hr_manager', 'password': 'Kadry-2026-Test'}, format='json')
         self.assertEqual(res.status_code, 200)
-        me = self.client.get('/api/me/', HTTP_AUTHORIZATION=f'Bearer {res.data["access"]}')
+        me = self.client.get('/api/me/')
         self.assertEqual(me.data['groups'], ['hr_managers'])
 
     @mock.patch.dict('os.environ', {'HR_MANAGER_PASSWORD': ''})

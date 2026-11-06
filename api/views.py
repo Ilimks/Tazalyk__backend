@@ -1,11 +1,19 @@
-from rest_framework import viewsets, status
+from django.http import HttpResponse
+from django.utils.http import content_disposition_header
+from rest_framework import mixins, viewsets, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated, BasePermission, SAFE_METHODS
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.views import APIView
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from .models import Video, Photo, News, Procurement, LocalAct, Legislation, Vacancy
+from .authentication import REFRESH_COOKIE, delete_auth_cookies, require_admin_origin, set_auth_cookies
+from .exports import applications_export_response
+from .media_files import DeletesStoredFilesMixin
+from .models import Video, Photo, News, Procurement, LocalAct, Legislation, Vacancy, VacancyApplication
 from .security_events import log_login_success, log_login_throttled
 from rest_framework import filters
 from .serializers import *
@@ -83,7 +91,7 @@ class VacancyPagination(PageNumberPagination):
     max_page_size = 100
 
 # ========== ВИДЕО ==========
-class VideoViewSet(viewsets.ModelViewSet):
+class VideoViewSet(DeletesStoredFilesMixin, viewsets.ModelViewSet):
     queryset = Video.objects.all().order_by('-date', '-created_at')
     serializer_class = VideoSerializer
     permission_classes = [SectionPermission]
@@ -91,7 +99,7 @@ class VideoViewSet(viewsets.ModelViewSet):
     pagination_class = VideoPagination
 
 # ========== ФОТО ==========
-class PhotoViewSet(viewsets.ModelViewSet):
+class PhotoViewSet(DeletesStoredFilesMixin, viewsets.ModelViewSet):
     queryset = Photo.objects.all().order_by('-date', '-created_at')
     serializer_class = PhotoSerializer
     permission_classes = [SectionPermission]
@@ -99,7 +107,7 @@ class PhotoViewSet(viewsets.ModelViewSet):
     pagination_class = PhotoPagination
 
 # ========== НОВОСТИ ==========
-class NewsViewSet(viewsets.ModelViewSet):
+class NewsViewSet(DeletesStoredFilesMixin, viewsets.ModelViewSet):
     queryset = News.objects.all().order_by('-date', '-created_at')   # исправлено
     serializer_class = NewsSerializer
     permission_classes = [SectionPermission]
@@ -152,7 +160,7 @@ class ProcurementViewSet(viewsets.ModelViewSet):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 # ========== ЛОКАЛЬНЫЕ АКТЫ ==========
-class LocalActViewSet(viewsets.ModelViewSet):
+class LocalActViewSet(DeletesStoredFilesMixin, viewsets.ModelViewSet):
     queryset = LocalAct.objects.all().order_by('-date', '-created_at')
     serializer_class = LocalActSerializer
     permission_classes = [SectionPermission]
@@ -160,7 +168,7 @@ class LocalActViewSet(viewsets.ModelViewSet):
     pagination_class = LocalActPagination
 
 # ========== ЗАКОНОДАТЕЛЬСТВО ==========
-class LegislationViewSet(viewsets.ModelViewSet):
+class LegislationViewSet(DeletesStoredFilesMixin, viewsets.ModelViewSet):
     queryset = Legislation.objects.all().order_by('-date', '-created_at')
     serializer_class = LegislationSerializer
     permission_classes = [SectionPermission]
@@ -189,6 +197,72 @@ class VacancyViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(is_active=is_active == '1')
         return queryset
 
+# ========== ОТКЛИКИ НА ВАКАНСИИ ==========
+class ApplicationPermission(BasePermission):
+    """Откликнуться может любой посетитель, всё остальное — только отдел кадров: здесь личные данные"""
+
+    def has_permission(self, request, view):
+        return view.action == 'create' or can_edit_section(request.user, 'vacancies')
+
+
+class ApplicationPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
+class VacancyApplicationViewSet(
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    permission_classes = [ApplicationPermission]
+    pagination_class = ApplicationPagination
+    throttle_scope = 'vacancy_applications'
+
+    def get_throttles(self):
+        # ограничение частоты — только на отправку резюме с сайта
+        return [ScopedRateThrottle()] if self.action == 'create' else []
+
+    def get_queryset(self):
+        # файл резюме не читаем из базы, пока его не попросили
+        queryset = VacancyApplication.objects.defer('resume_content')
+        status_filter = self.request.query_params.get('status')
+        if status_filter in dict(VacancyApplication.STATUS_CHOICES):
+            queryset = queryset.filter(status=status_filter)
+        return queryset
+
+    def get_serializer_class(self):
+        return VacancyApplicationCreateSerializer if self.action == 'create' else VacancyApplicationSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        # бот заполнил скрытое поле: отвечаем как обычно, но ничего не сохраняем
+        if not serializer.validated_data.get('website'):
+            serializer.save()
+        return Response({'ok': True}, status=status.HTTP_201_CREATED)
+
+    def export(self, request):
+        """GET /api/vacancy-applications/export/ — все отклики файлом .xlsx"""
+        return applications_export_response()
+
+    def resume(self, request, pk=None):
+        """GET /api/vacancy-applications/<id>/resume/ — файл резюме для отдела кадров"""
+        application = self.get_object()
+        return HttpResponse(
+            bytes(application.resume_content),
+            content_type=application.resume_type,
+            headers={
+                'Content-Disposition': content_disposition_header(True, application.resume_name),
+                # личные данные не должны оставаться в кэше браузера и прокси
+                'Cache-Control': 'no-store',
+            },
+        )
+
 # ========== ВХОД В АДМИНКУ ==========
 # Стандартный вход simplejwt с ограничением числа попыток: без него пароли можно было перебирать.
 # Лимиты — REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']['login'/'token_refresh'] в settings.py
@@ -200,6 +274,9 @@ class ThrottledTokenObtainPairView(TokenObtainPairView):
         response = super().post(request, *args, **kwargs)
         if response.status_code == 200:
             log_login_success(request, request.data.get('username'))
+            set_auth_cookies(response, response.data['access'], response.data['refresh'])
+            # токены остаются только в cookie: скрипт на странице их не увидит
+            response.data = {'ok': True}
         return response
 
     def throttled(self, request, wait):
@@ -210,6 +287,41 @@ class ThrottledTokenObtainPairView(TokenObtainPairView):
 class ThrottledTokenRefreshView(TokenRefreshView):
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'token_refresh'
+
+    def post(self, request, *args, **kwargs):
+        require_admin_origin(request)
+        serializer = self.get_serializer(data={'refresh': request.COOKIES.get(REFRESH_COOKIE) or 'none'})
+        try:
+            serializer.is_valid(raise_exception=True)
+        except TokenError as error:
+            raise InvalidToken(error.args[0])
+
+        response = Response({'ok': True})
+        set_auth_cookies(response, serializer.validated_data['access'], serializer.validated_data['refresh'])
+        return response
+
+
+class LogoutView(APIView):
+    """Токен перестаёт действовать на сервере: выход работает, даже если токен успели скопировать"""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'token_refresh'
+
+    def post(self, request):
+        require_admin_origin(request)
+        raw_token = request.COOKIES.get(REFRESH_COOKIE)
+        if raw_token:
+            try:
+                RefreshToken(raw_token).blacklist()
+            except TokenError:
+                # токен уже истёк или отозван: отзывать нечего
+                pass
+
+        response = Response(status=status.HTTP_204_NO_CONTENT)
+        delete_auth_cookies(response)
+        return response
 
 # Импорт из localStorage (/api/import-data/) удалён: любой вошедший сотрудник мог им
 # перезаписать все разделы в обход проверки прав и валидации.

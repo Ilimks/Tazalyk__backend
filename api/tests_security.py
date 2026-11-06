@@ -57,7 +57,6 @@ class SecurityTests(APITestCase):
             '/api/news/', HTTP_ORIGIN='https://mptazalyk.kg', HTTP_ACCESS_CONTROL_REQUEST_METHOD='GET',
         )
         self.assertEqual(own.get('Access-Control-Allow-Origin'), 'https://mptazalyk.kg')
-        self.assertNotIn('Access-Control-Allow-Credentials', own)
 
     def test_root_does_not_list_endpoints(self):
         body = self.client.get('/').content.decode()
