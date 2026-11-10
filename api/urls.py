@@ -47,6 +47,10 @@ urlpatterns = [
     re_path(r'^vacancy-applications/export/?$', views.VacancyApplicationViewSet.as_view({'get': 'export'})),
     re_path(r'^vacancy-applications/(?P<pk>[^/.]+)/resume/?$', views.VacancyApplicationViewSet.as_view({'get': 'resume'})),
     re_path(r'^vacancy-applications/(?P<pk>[^/.]+)/?$', views.VacancyApplicationViewSet.as_view({'get': 'retrieve', 'patch': 'partial_update', 'delete': 'destroy'})),
+    # жалобы присылает только сервер сайта (POST с ключом), остальное — сотрудники в админке
+    re_path(r'^complaints/?$', views.ComplaintViewSet.as_view({'get': 'list', 'post': 'create'})),
+    re_path(r'^complaints/(?P<pk>[^/.]+)/photos/(?P<photo_id>\d+)/?$', views.ComplaintViewSet.as_view({'get': 'photo'})),
+    re_path(r'^complaints/(?P<pk>[^/.]+)/?$', views.ComplaintViewSet.as_view({'get': 'retrieve', 'patch': 'partial_update', 'delete': 'destroy'})),
     
     path('search/', SearchView.as_view()),
     path('health/', health_check),

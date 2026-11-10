@@ -10,7 +10,9 @@ from rest_framework.exceptions import Throttled
 from shop.contacts import PHONE_RE, international_phone, is_valid_phone
 from .media_files import StoredFilesMixin
 from .media_validation import RESUME_MAX_BYTES, detect_resume_type, is_safe_docx, validate_media, validate_media_list
-from .models import Video, Photo, News, Procurement, LocalAct, Legislation, Vacancy, VacancyApplication
+from .models import (
+    Complaint, ComplaintPhoto, Video, Photo, News, Procurement, LocalAct, Legislation, Vacancy, VacancyApplication,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -224,3 +226,112 @@ class VacancyApplicationSerializer(serializers.ModelSerializer):
             'id', 'vacancy', 'vacancy_title', 'full_name', 'phone', 'email', 'comment',
             'resume_name', 'resume_size', 'created_at', 'updated_at',
         ]
+
+
+# ========== ЖАЛОБЫ ==========
+COMPLAINT_MAX_PHOTOS = 5
+COMPLAINT_PHOTO_MAX_BYTES = 5 * 1024 * 1024
+# столько же пропускает сайт: Gmail не примет письмо больше
+COMPLAINT_PHOTOS_MAX_TOTAL = 15 * 1024 * 1024
+
+# тип фото — по первым байтам, как на сайте; имени и типу из запроса не верим
+COMPLAINT_PHOTO_TYPES = (
+    ('image/jpeg', lambda head: head[:3] == b'\xff\xd8\xff'),
+    ('image/png', lambda head: head[:8] == b'\x89PNG\r\n\x1a\n'),
+    ('image/webp', lambda head: head[:4] == b'RIFF' and head[8:12] == b'WEBP'),
+    ('image/heic', lambda head: head[4:8] == b'ftyp' and head[8:12] in (b'heic', b'heix', b'hevc', b'mif1', b'msf1')),
+)
+
+
+def detect_photo_type(content):
+    return next((mime for mime, test in COMPLAINT_PHOTO_TYPES if test(content[:16])), None)
+
+
+class ComplaintCreateSerializer(serializers.Serializer):
+    """Жалоба от сервера сайта. Капча, почта и длина полей там уже проверены,
+    здесь — повторная проверка: в базу не должно попасть то, что админка не покажет"""
+
+    complaint_type = serializers.ChoiceField(choices=Complaint.TYPE_CHOICES)
+    full_name = serializers.CharField(max_length=200)
+    email = serializers.CharField(max_length=254)
+    phone = serializers.CharField(max_length=50)
+    subject = serializers.CharField(max_length=300)
+    description = serializers.CharField(max_length=10000)
+    incident_date = serializers.DateField(required=False, allow_null=True)
+    incident_location = serializers.CharField(max_length=300, required=False, allow_blank=True)
+    photos = serializers.ListField(
+        child=serializers.FileField(allow_empty_file=False),
+        required=False,
+        max_length=COMPLAINT_MAX_PHOTOS,
+    )
+
+    def validate_photos(self, files):
+        photos = []
+        for file in files:
+            if file.size > COMPLAINT_PHOTO_MAX_BYTES:
+                raise serializers.ValidationError('Фото больше 5 МБ.')
+            content = file.read()
+            content_type = detect_photo_type(content)
+            if content_type is None:
+                raise serializers.ValidationError('Подойдут фото JPG, PNG, WEBP или HEIC.')
+            photos.append({'content': content, 'content_type': content_type})
+        if sum(len(photo['content']) for photo in photos) > COMPLAINT_PHOTOS_MAX_TOTAL:
+            raise serializers.ValidationError('Все фото вместе больше 15 МБ.')
+        return photos
+
+    def create(self, validated_data):
+        photos = validated_data.pop('photos', [])
+        note = ''
+        if photos and self._daily_limit_reached(photos):
+            # жалобу важнее сохранить, чем фото: они всё равно есть в письме
+            logger.warning('Жалобы: дневной предел фото исчерпан, жалоба сохранена без фото')
+            photos = []
+            note = 'Фото не сохранены: за сутки прислали слишком много. Они есть в письме с этой жалобой.'
+
+        complaint = Complaint.objects.create(**validated_data, manager_note=note)
+        ComplaintPhoto.objects.bulk_create([
+            ComplaintPhoto(
+                complaint=complaint,
+                content=photo['content'],
+                content_type=photo['content_type'],
+                size=len(photo['content']),
+                position=index,
+            )
+            for index, photo in enumerate(photos)
+        ])
+        return complaint
+
+    @staticmethod
+    def _daily_limit_reached(photos):
+        since = timezone.now() - timedelta(hours=24)
+        stored = ComplaintPhoto.objects.filter(complaint__created_at__gte=since).aggregate(total=Sum('size'))['total'] or 0
+        return stored + sum(len(photo['content']) for photo in photos) > settings.COMPLAINTS_DAILY_BYTES
+
+
+class ComplaintPhotoSerializer(serializers.ModelSerializer):
+    """Без самого файла: его админка скачивает отдельным запросом"""
+
+    class Meta:
+        model = ComplaintPhoto
+        fields = ['id', 'content_type', 'size']
+
+
+class ComplaintSerializer(serializers.ModelSerializer):
+    """Для сотрудников. Менять можно только статус и свою заметку"""
+
+    type_label = serializers.CharField(source='get_complaint_type_display', read_only=True)
+    status_label = serializers.CharField(source='get_status_display', read_only=True)
+    photos = ComplaintPhotoSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Complaint
+        fields = [
+            'id', 'complaint_type', 'type_label', 'full_name', 'email', 'phone', 'subject', 'description',
+            'incident_date', 'incident_location', 'photos', 'status', 'status_label', 'manager_note',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'id', 'complaint_type', 'full_name', 'email', 'phone', 'subject', 'description',
+            'incident_date', 'incident_location', 'created_at', 'updated_at',
+        ]
+        extra_kwargs = {'manager_note': {'max_length': 5000}}

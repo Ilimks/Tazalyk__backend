@@ -233,3 +233,67 @@ class VacancyApplication(models.Model):
 
     def __str__(self):
         return f'{self.full_name} — {self.vacancy_title}'
+
+
+# ========== ЖАЛОБЫ ==========
+class Complaint(models.Model):
+    """Жалоба с формы сайта. Приходит сюда вся, любого типа; письмо на почту уходит отдельно"""
+
+    # те же значения, что в форме сайта (ComplaintForm.tsx)
+    TYPE_CHOICES = [
+        ('waste_issue', 'Проблема с вывозом отходов'),
+        ('billing_error', 'Неправильное начисление за вывоз мусора'),
+        ('service_quality', 'Качество услуг'),
+        ('employee_complaint', 'Жалоба на сотрудника'),
+        ('other', 'Другое'),
+    ]
+    STATUS_CHOICES = [
+        ('new', 'Новая'),
+        ('in_progress', 'В работе'),
+        ('resolved', 'Решена'),
+        ('rejected', 'Отклонена'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    complaint_type = models.CharField(max_length=30, choices=TYPE_CHOICES, verbose_name="Тип обращения")
+    full_name = models.CharField(max_length=200, verbose_name="ФИО")
+    email = models.CharField(max_length=254, verbose_name="Электронная почта")
+    phone = models.CharField(max_length=50, verbose_name="Телефон")
+    subject = models.CharField(max_length=300, verbose_name="Тема")
+    description = models.TextField(verbose_name="Суть жалобы")
+    incident_date = models.DateField(null=True, blank=True, verbose_name="Дата происшествия")
+    incident_location = models.CharField(max_length=300, blank=True, verbose_name="Место происшествия")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new', verbose_name="Статус")
+    manager_note = models.TextField(blank=True, verbose_name="Заметка сотрудника")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата поступления")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Жалоба'
+        verbose_name_plural = 'Жалобы'
+        indexes = [
+            models.Index(fields=['status', '-created_at'], name='api_complaint_status_created'),
+            models.Index(fields=['complaint_type', '-created_at'], name='api_complaint_type_created'),
+        ]
+
+    def __str__(self):
+        return f'{self.full_name} — {self.subject}'
+
+
+class ComplaintPhoto(models.Model):
+    # фото к жалобе — личные данные (дворы, лица, номера машин): файл лежит в базе,
+    # а не в публичной папке /media/, и отдаётся только сотрудникам через API
+    complaint = models.ForeignKey(Complaint, on_delete=models.CASCADE, related_name='photos', verbose_name="Жалоба")
+    content = models.BinaryField(verbose_name="Файл")
+    content_type = models.CharField(max_length=50, verbose_name="Тип файла")
+    size = models.PositiveIntegerField(verbose_name="Размер, байт")
+    position = models.PositiveSmallIntegerField(default=0, verbose_name="Порядок")
+
+    class Meta:
+        ordering = ['position', 'id']
+        verbose_name = 'Фото к жалобе'
+        verbose_name_plural = 'Фото к жалобам'
+
+    def __str__(self):
+        return f'Фото {self.position + 1} — {self.complaint_id}'

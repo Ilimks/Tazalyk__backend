@@ -1,4 +1,9 @@
+import hmac
+
+from django.conf import settings
+from django.db.models import Prefetch
 from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
 from django.utils.http import content_disposition_header
 from rest_framework import mixins, viewsets, status
 from rest_framework.decorators import api_view, permission_classes
@@ -13,7 +18,9 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .authentication import REFRESH_COOKIE, delete_auth_cookies, require_admin_origin, set_auth_cookies
 from .exports import applications_export_response
 from .media_files import DeletesStoredFilesMixin
-from .models import Video, Photo, News, Procurement, LocalAct, Legislation, Vacancy, VacancyApplication
+from .models import (
+    Complaint, ComplaintPhoto, Video, Photo, News, Procurement, LocalAct, Legislation, Vacancy, VacancyApplication,
+)
 from .security_events import log_login_success, log_login_throttled
 from rest_framework import filters
 from .serializers import *
@@ -33,6 +40,8 @@ SECTION_GROUPS = {
     'legislation': 'legal_managers',
     # отдел кадров (группу создаёт миграция 0016, сотрудника — manage.py create_hr_user)
     'vacancies': 'hr_managers',
+    # жалобы граждан (группу создаёт миграция 0019, сотрудника — manage.py create_complaints_user)
+    'complaints': 'complaints_managers',
 }
 
 def can_edit_section(user, section):
@@ -258,6 +267,83 @@ class VacancyApplicationViewSet(
             content_type=application.resume_type,
             headers={
                 'Content-Disposition': content_disposition_header(True, application.resume_name),
+                # личные данные не должны оставаться в кэше браузера и прокси
+                'Cache-Control': 'no-store',
+            },
+        )
+
+# ========== ЖАЛОБЫ ==========
+def has_intake_token(request):
+    """Запрос пришёл от сервера сайта: он проверил капчу и подписал запрос общим ключом"""
+    expected = settings.COMPLAINTS_INTAKE_TOKEN
+    provided = request.headers.get('X-Intake-Token', '')
+    # короткий ключ подбирается, пустой — значит, приём не настроен
+    if len(expected) < 32 or not provided:
+        return False
+    return hmac.compare_digest(provided.encode(), expected.encode())
+
+
+class ComplaintPermission(BasePermission):
+    """Присылает жалобы только сервер сайта. Смотреть и обрабатывать — сотрудники с доступом к жалобам,
+    удалять — только администратор: это обращения граждан, на которые нужно ответить"""
+
+    def has_permission(self, request, view):
+        if view.action == 'create':
+            return has_intake_token(request)
+        if view.action == 'destroy':
+            return bool(request.user and request.user.is_authenticated and request.user.is_superuser)
+        return can_edit_section(request.user, 'complaints')
+
+
+class ComplaintPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
+class ComplaintViewSet(
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    permission_classes = [ComplaintPermission]
+    pagination_class = ComplaintPagination
+
+    def get_queryset(self):
+        # сами файлы фото не читаем из базы: в списке нужны только их номера и размеры
+        photos = ComplaintPhoto.objects.defer('content')
+        queryset = Complaint.objects.prefetch_related(Prefetch('photos', queryset=photos))
+        params = self.request.query_params
+        status_filter = params.get('status')
+        if status_filter in dict(Complaint.STATUS_CHOICES):
+            queryset = queryset.filter(status=status_filter)
+        type_filter = params.get('complaint_type')
+        if type_filter in dict(Complaint.TYPE_CHOICES):
+            queryset = queryset.filter(complaint_type=type_filter)
+        return queryset
+
+    def get_serializer_class(self):
+        return ComplaintCreateSerializer if self.action == 'create' else ComplaintSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        complaint = serializer.save()
+        return Response({'id': str(complaint.id)}, status=status.HTTP_201_CREATED)
+
+    def photo(self, request, pk=None, photo_id=None):
+        """GET /api/complaints/<id>/photos/<photo_id>/ — фото к жалобе для сотрудника"""
+        complaint = self.get_object()
+        photo = get_object_or_404(ComplaintPhoto, pk=photo_id, complaint=complaint)
+        extension = photo.content_type.split('/')[-1].replace('jpeg', 'jpg')
+        return HttpResponse(
+            bytes(photo.content),
+            content_type=photo.content_type,
+            headers={
+                'Content-Disposition': content_disposition_header(False, f'zhaloba-foto-{photo.position + 1}.{extension}'),
                 # личные данные не должны оставаться в кэше браузера и прокси
                 'Cache-Control': 'no-store',
             },
