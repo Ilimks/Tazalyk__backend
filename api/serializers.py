@@ -26,7 +26,7 @@ class VideoSerializer(StoredFilesMixin, serializers.ModelSerializer):
     
     class Meta:
         model = Video
-        fields = ['id', 'main_video_url', 'gallery_videos', 'thumbnail', 'date', 'created_at', 'updated_at']
+        fields = ['id', 'main_video_url', 'gallery_videos', 'thumbnail', 'caption_ru', 'caption_ky', 'date', 'created_at', 'updated_at']
 
     def validate_main_video_url(self, value):
         return validate_media(value, 'video')
@@ -47,7 +47,7 @@ class PhotoSerializer(StoredFilesMixin, serializers.ModelSerializer):
     
     class Meta:
         model = Photo
-        fields = ['id', 'main_image', 'gallery_images', 'date', 'created_at', 'updated_at']
+        fields = ['id', 'main_image', 'gallery_images', 'caption_ru', 'caption_ky', 'date', 'created_at', 'updated_at']
 
     def validate_main_image(self, value):
         return validate_media(value, 'image')

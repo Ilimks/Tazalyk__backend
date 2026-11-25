@@ -203,3 +203,30 @@ class ListSearchTests(APITestCase):
         self.assertIsNone(phone_digits('345'))
         self.assertIsNone(phone_digits('дом 12'))
         self.assertEqual(search_words('  № 12   мусор '), ['12', 'мусор'])
+
+
+class MediaCaptionTests(APITestCase):
+    """Подписи к фото и видео"""
+
+    PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+
+    def setUp(self):
+        self.client.force_authenticate(User.objects.create_superuser('boss', password='x'))
+
+    def test_photo_caption_is_optional_and_public(self):
+        plain = self.client.post('/api/photos/', {'main_image': self.PIXEL, 'date': '2026-11-25'}, format='json')
+        self.assertEqual(plain.status_code, 201, plain.data)
+        self.assertEqual((plain.data['caption_ru'], plain.data['caption_ky']), ('', ''))
+        named = self.client.post('/api/photos/', {'main_image': self.PIXEL, 'date': '2026-11-26', 'caption_ru': 'Субботник', 'caption_ky': 'Ишембилик'}, format='json')
+        self.assertEqual(named.status_code, 201, named.data)
+        # старая админка подписи не присылает — они не стираются
+        res = self.client.put(f"/api/photos/{named.data['id']}/", {'main_image': named.data['main_image'], 'date': '2026-11-27'}, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data['caption_ru'], 'Субботник')
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.get('/api/photos/').data['results'][0]['caption_ky'], 'Ишембилик')
+
+    def test_too_long_caption_rejected(self):
+        res = self.client.post('/api/photos/', {'main_image': self.PIXEL, 'date': '2026-11-25', 'caption_ru': 'а' * 161}, format='json')
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('caption_ru', res.data)

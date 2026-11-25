@@ -9,6 +9,8 @@ class Video(models.Model):
     main_video_url = models.TextField(verbose_name="Главное видео (base64)")
     gallery_videos = models.JSONField(default=list, blank=True, verbose_name="Дополнительные видео")
     thumbnail = models.TextField(blank=True, null=True, verbose_name="Превью (base64)")
+    caption_ru = models.CharField(max_length=160, blank=True, default='', verbose_name="Подпись (Русский)")
+    caption_ky = models.CharField(max_length=160, blank=True, default='', verbose_name="Подпись (Кыргызча)")
     date = models.DateField(verbose_name="Дата")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
@@ -19,13 +21,15 @@ class Video(models.Model):
         verbose_name_plural = 'Видео'
     
     def __str__(self):
-        return f"Видео от {self.date}"
+        return self.caption_ru or f"Видео от {self.date}"
 
 # ========== ФОТО ==========
 class Photo(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     main_image = models.TextField(verbose_name="Главное фото (base64)")
     gallery_images = models.JSONField(default=list, blank=True, verbose_name="Дополнительные фото")
+    caption_ru = models.CharField(max_length=160, blank=True, default='', verbose_name="Подпись (Русский)")
+    caption_ky = models.CharField(max_length=160, blank=True, default='', verbose_name="Подпись (Кыргызча)")
     date = models.DateField(verbose_name="Дата")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
@@ -36,7 +40,7 @@ class Photo(models.Model):
         verbose_name_plural = 'Фото'
     
     def __str__(self):
-        return f"Фото от {self.date}"
+        return self.caption_ru or f"Фото от {self.date}"
 
 # ========== НОВОСТИ ==========
 class News(models.Model):
