@@ -7,6 +7,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 
+from api.list_search import ListSearchFilter
 from .exports import orders_export_response
 from .models import Order, Product
 from .permissions import OrderPermission, ProductPermission, is_shop_manager
@@ -129,6 +130,9 @@ class OrderViewSet(
 ):
     permission_classes = [OrderPermission]
     pagination_class = OrderPagination
+    filter_backends = [ListSearchFilter]
+    search_text = ['id', 'customer_name', 'telegram', 'address', 'items__product_name']
+    search_phone = ['phone']
     throttle_scope = 'shop_orders'
 
     def get_throttles(self):

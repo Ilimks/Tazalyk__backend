@@ -12,7 +12,7 @@ from django.test import override_settings
 from rest_framework.test import APITestCase
 
 from .contacts import international_phone
-from .models import Order, Product
+from .models import Order, OrderItem, Product
 
 # минимальный настоящий PNG 1×1
 PNG_1PX = base64.b64decode(
@@ -208,6 +208,20 @@ class ShopApiTests(APITestCase):
         self.assertEqual(data['contact_label'], 'WhatsApp')
         self.assertTrue(data['customer_whatsapp_url'].startswith('https://wa.me/996555123456?text='))
         self.assertEqual(data['customer_telegram_url'], 'https://t.me/+996555123456')
+
+    def test_orders_search(self):
+        for name, phone, products in (('Асанов Азамат', '+996 700 111 222', ['Контейнер 240', 'Контейнер 660']), ('Ким Олег', '+996555333444', ['Урна'])):
+            order = Order.objects.create(customer_name=name, phone=phone, contact_method='whatsapp', delivery_method='pickup', total=1)
+            for product in products:
+                OrderItem.objects.create(order=order, product_name=product, volume=240, price=1, quantity=1)
+        self.client.force_authenticate(self.manager)
+        found = lambda q: [row['customer_name'] for row in self.client.get('/api/shop/orders/', {'search': q}).data['results']]
+        # два подходящих товара — заказ в списке один раз
+        self.assertEqual(found('контейнер'), ['Асанов Азамат'])
+        self.assertEqual(found('0700111222'), ['Асанов Азамат'])
+        self.assertEqual(found('олег'), ['Ким Олег'])
+        self.assertEqual(found('ничего'), [])
+        self.assertEqual(self.client.get('/api/shop/orders/', {'search': 'контейнер'}).data['count'], 1)
 
     def test_orders_are_private(self):
         self.assertEqual(self.client.get('/api/shop/orders/').status_code, 401)

@@ -17,6 +17,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .authentication import REFRESH_COOKIE, delete_auth_cookies, require_admin_origin, set_auth_cookies
 from .exports import applications_export_response
+from .list_search import ListSearchFilter
 from .media_files import DeletesStoredFilesMixin
 from .models import (
     Complaint, ComplaintPhoto, Video, Photo, News, Procurement, LocalAct, Legislation, Vacancy, VacancyApplication,
@@ -140,6 +141,8 @@ class ProcurementViewSet(viewsets.ModelViewSet):
     permission_classes = [SectionPermission]
     section = 'procurements'
     pagination_class = ProcurementPagination
+    filter_backends = [ListSearchFilter]
+    search_text = ['number', 'contractNumber', 'supplier']
     
     def create(self, request, *args, **kwargs):
         # тело запроса в лог не пишем: там данные поставщиков и суммы договоров
@@ -175,6 +178,8 @@ class LocalActViewSet(DeletesStoredFilesMixin, viewsets.ModelViewSet):
     permission_classes = [SectionPermission]
     section = 'local_acts'
     pagination_class = LocalActPagination
+    filter_backends = [ListSearchFilter]
+    search_text = ['title', 'file_name']
 
 # ========== ЗАКОНОДАТЕЛЬСТВО ==========
 class LegislationViewSet(DeletesStoredFilesMixin, viewsets.ModelViewSet):
@@ -183,6 +188,8 @@ class LegislationViewSet(DeletesStoredFilesMixin, viewsets.ModelViewSet):
     permission_classes = [SectionPermission]
     section = 'legislation'
     pagination_class = LegislationPagination
+    filter_backends = [ListSearchFilter]
+    search_text = ['title', 'file_name']
 
 # ========== ВАКАНСИИ ==========
 class VacancyViewSet(viewsets.ModelViewSet):
@@ -190,6 +197,8 @@ class VacancyViewSet(viewsets.ModelViewSet):
     permission_classes = [SectionPermission]
     section = 'vacancies'
     pagination_class = VacancyPagination
+    filter_backends = [ListSearchFilter]
+    search_text = ['title_ru', 'title_ky']
 
     def get_queryset(self):
         queryset = Vacancy.objects.all().order_by('-created_at')
@@ -230,6 +239,9 @@ class VacancyApplicationViewSet(
 ):
     permission_classes = [ApplicationPermission]
     pagination_class = ApplicationPagination
+    filter_backends = [ListSearchFilter]
+    search_text = ['full_name', 'email', 'vacancy_title']
+    search_phone = ['phone']
     throttle_scope = 'vacancy_applications'
 
     def get_throttles(self):
@@ -311,6 +323,9 @@ class ComplaintViewSet(
 ):
     permission_classes = [ComplaintPermission]
     pagination_class = ComplaintPagination
+    filter_backends = [ListSearchFilter]
+    search_text = ['full_name', 'email', 'subject', 'description', 'incident_location']
+    search_phone = ['phone']
 
     def get_queryset(self):
         # сами файлы фото не читаем из базы: в списке нужны только их номера и размеры

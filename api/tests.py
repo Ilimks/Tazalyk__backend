@@ -6,7 +6,8 @@ from django.core.management import call_command
 from django.test import override_settings
 from rest_framework.test import APITestCase
 
-from .models import Vacancy
+from .models import Complaint, LocalAct, Procurement, Vacancy, VacancyApplication
+from .list_search import phone_digits, search_words
 
 
 class VacancyApiTests(APITestCase):
@@ -133,3 +134,72 @@ class CreateHrUserCommandTests(APITestCase):
         with self.assertRaises(Exception):
             self.run_command('--username', 'boss')
         self.assertTrue(User.objects.get(username='boss').is_superuser)
+
+class ListSearchTests(APITestCase):
+    """Поиск в списках админки: ?search="""
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser('boss', password='x')
+        self.client.force_authenticate(self.admin)
+
+    def found(self, url, search, key):
+        res = self.client.get(url, {'search': search})
+        self.assertEqual(res.status_code, 200)
+        return sorted(str(row[key]) for row in res.data['results'])
+
+    def test_procurements_by_number_contract_and_supplier(self):
+        for number, contract, supplier in (('11', '314/35', 'ОсОО «Бишкек Строй Сервис»'), ('12', '77-А', 'ОсОО «Ак-Жол»')):
+            Procurement.objects.create(number=number, contractNumber=contract, supplier=supplier, date='2026-11-01', amount=1)
+        numbers = lambda q: [row['contractNumber'] for row in self.client.get('/api/procurements/', {'search': q}).data['results']]
+        self.assertEqual(numbers('строй бишкек'), ['314/35'])
+        self.assertEqual(numbers('АК-ЖОЛ'), ['77-А'])
+        self.assertEqual(numbers('314/'), ['314/35'])
+        self.assertEqual(numbers('нет такого'), [])
+        # пустой поиск показывает всё
+        self.assertEqual(len(numbers('   ')), 2)
+
+    def test_documents_by_title(self):
+        LocalAct.objects.create(title='Правила внутреннего распорядка', file_url='/media/a.pdf', file_name='pravila.pdf', date='2026-11-01')
+        LocalAct.objects.create(title='Положение о закупках', file_url='/media/b.pdf', file_name='zakupki.pdf', date='2026-11-01')
+        self.assertEqual(self.found('/api/local-acts/', 'распорядка правила', 'title'), ['Правила внутреннего распорядка'])
+        self.assertEqual(self.found('/api/local-acts/', 'ZAKUPKI', 'title'), ['Положение о закупках'])
+
+    def test_complaints_by_text_and_phone(self):
+        common = {'complaint_type': 'other', 'email': 'a@b.kg', 'description': 'Текст'}
+        Complaint.objects.create(full_name='Асанова Айгуль', phone='+996 (700) 12-34-56', subject='Мусор', incident_location='ул. Киевская, 12', **common)
+        Complaint.objects.create(full_name='Токтогулов Бакыт', phone='+996555000111', subject='Счёт', **common)
+        self.assertEqual(self.found('/api/complaints/', 'айгуль', 'full_name'), ['Асанова Айгуль'])
+        self.assertEqual(self.found('/api/complaints/', 'киевская', 'full_name'), ['Асанова Айгуль'])
+        for phone in ('0700123456', '+996700123456', '700 123 456', '123456', '(700) 12-34-56'):
+            self.assertEqual(self.found('/api/complaints/', phone, 'full_name'), ['Асанова Айгуль'], phone)
+        # вместе с фильтром по типу
+        self.assertEqual(self.client.get('/api/complaints/', {'search': 'айгуль', 'complaint_type': 'billing_error'}).data['count'], 0)
+
+    def test_applications_and_vacancies(self):
+        for name, vacancy in (('Осмонов Нурлан', 'Водитель'), ('Ким Анна', 'Дворник')):
+            VacancyApplication.objects.create(full_name=name, vacancy_title=vacancy, phone='+996700000001', resume_content=b'x', resume_name='r.pdf', resume_type='application/pdf', resume_size=1)
+        self.assertEqual(self.found('/api/vacancy-applications/', 'водитель', 'full_name'), ['Осмонов Нурлан'])
+        Vacancy.objects.create(title_ru='Водитель мусоровоза', title_ky='Айдоочу')
+        Vacancy.objects.create(title_ru='Дворник')
+        self.assertEqual(self.found('/api/vacancies/', 'айдоочу', 'title_ru'), ['Водитель мусоровоза'])
+
+    def test_odd_input_is_safe(self):
+        Procurement.objects.create(number='1', contractNumber='К-1', supplier='Поставщик', date='2026-11-01', amount=1)
+        for value in ('\x00', '%', "'; drop table", '\\', '((((', 'а' * 5000, '1 2 3 4 5 6 7 8 9', '[0-9]*', '№'):
+            self.assertEqual(self.client.get('/api/procurements/', {'search': value}).status_code, 200, value[:20])
+            self.assertEqual(self.client.get('/api/complaints/', {'search': value}).status_code, 200, value[:20])
+        # знак % ищется буквально, а не как «любой текст»
+        self.assertEqual(self.client.get('/api/procurements/', {'search': '%'}).data['count'], 0)
+
+    def test_private_lists_stay_private(self):
+        self.client.force_authenticate(None)
+        for url in ('/api/complaints/', '/api/vacancy-applications/', '/api/shop/orders/'):
+            self.assertIn(self.client.get(url, {'search': 'а'}).status_code, (401, 403), url)
+
+    def test_phone_digits(self):
+        self.assertEqual(phone_digits('+996 (700) 12-34-56'), '700123456')
+        self.assertEqual(phone_digits('0700123456'), '700123456')
+        self.assertEqual(phone_digits('3456'), '3456')
+        self.assertIsNone(phone_digits('345'))
+        self.assertIsNone(phone_digits('дом 12'))
+        self.assertEqual(search_words('  № 12   мусор '), ['12', 'мусор'])
