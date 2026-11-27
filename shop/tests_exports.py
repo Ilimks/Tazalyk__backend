@@ -1,4 +1,3 @@
-"""Выгрузка заказов в Excel: доступ, какие товары попадают в файл, суммы, безопасность значений."""
 from decimal import Decimal
 from io import BytesIO
 
@@ -103,7 +102,6 @@ class OrdersExportTests(APITestCase):
 
     def test_summary_counts_pieces_and_money_of_its_own_sheet(self):
         workbook = self.workbook()
-        # 2 + 1 + 2 штуки: 10001 + 3000 + 10001 сом
         self.assertIn('товаров: 5 шт.', workbook['Продано']['A2'].value)
         self.assertIn('23 002.00 сом', workbook['Продано']['A2'].value)
         self.assertIn('товаров: 3 шт.', workbook['Отклонено']['A2'].value)

@@ -1,4 +1,3 @@
-"""Общее оформление таблиц Excel для выгрузок из админки."""
 from io import BytesIO
 
 from django.http import HttpResponse
@@ -29,7 +28,6 @@ def solid_fill(color):
 
 
 def set_text(cell, value):
-    """Значение от пользователя всегда остаётся текстом: «=...» не должно стать формулой при открытии файла"""
     cell.value = ILLEGAL_CHARACTERS_RE.sub('', str(value or ''))
     cell.data_type = 's'
 
@@ -70,7 +68,6 @@ def write_header(sheet, columns):
 
 
 def style_row(sheet, row, columns, wrapped=()):
-    """Оформляет строку данных; wrapped — ячейки с длинным текстом"""
     cells = [sheet.cell(row, index) for index in range(1, len(columns) + 1)]
     border = Border(bottom=Side(style='thin', color=LINE))
     for cell, (_, _, align) in zip(cells, columns):
@@ -83,7 +80,6 @@ def style_row(sheet, row, columns, wrapped=()):
 
 
 def write_total(sheet, columns, last_data_row, total_columns):
-    """Строка «Итого». total_columns: номер колонки -> формат числа"""
     row = last_data_row + 1
     border = Border(top=Side(style='medium', color=GREEN))
     for index in range(1, len(columns) + 1):
@@ -96,7 +92,6 @@ def write_total(sheet, columns, last_data_row, total_columns):
     sheet.cell(row, 1, 'Итого')
     for column, number_format in total_columns.items():
         letter = get_column_letter(column)
-        # SUBTOTAL: при включённом фильтре считает только видимые строки
         total = sheet.cell(row, column, f'=SUBTOTAL(109,{letter}{FIRST_DATA_ROW}:{letter}{last_data_row})')
         total.number_format = number_format
         total.alignment = Alignment(horizontal=columns[column - 1][2], vertical='center')
@@ -108,7 +103,6 @@ def finish_sheet(sheet, columns, last_data_row):
     if last_data_row >= FIRST_DATA_ROW:
         sheet.auto_filter.ref = f'A{HEADER_ROW}:{get_column_letter(len(columns))}{last_data_row}'
 
-    # шапка таблицы видна при прокрутке и повторяется на каждом листе при печати
     sheet.freeze_panes = f'A{FIRST_DATA_ROW}'
     sheet.print_title_rows = f'{HEADER_ROW}:{HEADER_ROW}'
     sheet.page_setup.orientation = 'landscape'

@@ -1,9 +1,3 @@
-"""Видео, фото и документы лежат файлами в MEDIA_ROOT, в базе — только путь /media/<папка>/<имя>.
-
-Пока файлы хранились внутри записи, они попадали в каждый ответ API: список из 4 карточек видео
-весил 109 МБ. Сайт не мог показать ни одного превью, пока не дочитает ответ, а десяток таких
-запросов занимал всю память сервера.
-"""
 import base64
 import binascii
 import logging
@@ -26,7 +20,6 @@ from .media_validation import DATA_URL_RE
 logger = logging.getLogger(__name__)
 
 FOLDERS = ('videos', 'photos', 'news', 'documents')
-# расширение выбираем по типу, прошедшему проверку: имя от пользователя в путь не попадает
 EXTENSIONS = {
     'video/mp4': 'mp4',
     'video/quicktime': 'mov',
@@ -44,19 +37,16 @@ EXTENSIONS = {
     'application/octet-stream': 'bin',
     'text/plain': 'txt',
 }
-# только имена, которые выдаём сами: из значения нельзя собрать путь к чужому файлу
 STORED_NAME_RE = re.compile(rf'^(?:{"|".join(FOLDERS)})/[0-9a-f]{{32}}\.[a-z0-9]+$')
 
 STREAMABLE_EXTENSIONS = ('.mp4', '.mov')
 REMUX_TIMEOUT_SECONDS = 120
 
-# имя файла уникально и содержимое под ним не меняется
 CACHE_SECONDS = 365 * 24 * 60 * 60
 RANGE_RE = re.compile(r'^bytes=(\d*)-(\d*)$')
 
 
 def _stored_name(value):
-    """Имя файла внутри MEDIA_ROOT по пути или ссылке; None — это не наш файл"""
     path = urlsplit(value or '').path
     if not path.startswith(settings.MEDIA_URL):
         return None
@@ -65,11 +55,6 @@ def _stored_name(value):
 
 
 def _needs_faststart(path):
-    """Оглавление MP4 разбито по файлу (moof) или лежит за данными.
-
-    Такой файл браузер просматривает целиком ещё до первого кадра: ролик на 25 МБ давал 141 запрос
-    и 10 секунд ожидания даже на локальной машине, а по сети это намного дольше.
-    """
     size = os.path.getsize(path)
     moov_seen = False
     position = 0
@@ -96,10 +81,6 @@ def _needs_faststart(path):
 
 
 def make_faststart(name):
-    """Перекладывает MP4 без перекодирования: оглавление в начало, качество не меняется.
-
-    Если не вышло, остаётся исходный файл: он просто дольше стартует.
-    """
     path = default_storage.path(name)
     extension = os.path.splitext(path)[1]
     if extension not in STREAMABLE_EXTENSIONS or not _needs_faststart(path):
@@ -112,14 +93,12 @@ def make_faststart(name):
         subprocess.run(
             [
                 get_ffmpeg_exe(), '-nostdin', '-v', 'error', '-y',
-                # файл от сотрудника: читаем только как MP4 и только с диска, ссылки внутри не открываем
                 '-protocol_whitelist', 'file', '-f', 'mov', '-i', path,
                 '-c', 'copy', '-movflags', '+faststart', temporary,
             ],
             check=True,
             capture_output=True,
             timeout=REMUX_TIMEOUT_SECONDS,
-            # секреты сервера программе не нужны
             env={},
         )
         os.replace(temporary, path)
@@ -133,7 +112,6 @@ def make_faststart(name):
 
 
 def store_file(value, folder):
-    """data URL становится файлом. Ссылка на наш файл — путём без домена, чужая ссылка не меняется"""
     if value.startswith('data:'):
         match = DATA_URL_RE.match(value[:300])
         extension = EXTENSIONS.get(match.group(1)) if match else None
@@ -161,10 +139,8 @@ def delete_files(names):
 
 
 def public_url(value, request):
-    """Полный адрес нашего файла для ответа API. Записи, которые ещё не перенесены, отдаются как есть"""
     if not value or not _stored_name(value):
         return value
-    # на сервере за прокси адрес задаётся явно, чтобы не получить http:// на https-сайте
     base = getattr(settings, 'PUBLIC_MEDIA_BASE_URL', '')
     if base:
         return f'{base.rstrip("/")}{value}'
@@ -172,11 +148,6 @@ def public_url(value, request):
 
 
 class StoredFilesMixin:
-    """Сериализатор, поля которого хранят файлы на диске.
-
-    В потомке: file_folder — папка, file_fields — поля с одним файлом, file_list_fields — со списком.
-    """
-
     file_folder = ''
     file_fields = ()
     file_list_fields = ()
@@ -201,7 +172,6 @@ class StoredFilesMixin:
 
     @classmethod
     def store_files(cls, data):
-        """Копия данных записи, где содержимое файлов заменено путями"""
         stored = dict(data)
         for field in cls.file_fields:
             if stored.get(field):
@@ -213,7 +183,6 @@ class StoredFilesMixin:
 
     @classmethod
     def stored_files(cls, instance):
-        """Имена файлов, которыми пользуется запись"""
         values = [getattr(instance, field) for field in cls.file_fields]
         for field in cls.file_list_fields:
             values.extend(getattr(instance, field) or [])
@@ -221,8 +190,6 @@ class StoredFilesMixin:
 
 
 class DeletesStoredFilesMixin:
-    """Вьюсет: вместе с записью удаляются её файлы"""
-
     def perform_destroy(self, instance):
         files = self.get_serializer_class().stored_files(instance)
         instance.delete()
@@ -230,8 +197,6 @@ class DeletesStoredFilesMixin:
 
 
 class _FilePart:
-    """Кусок файла для ответа на запрос Range"""
-
     def __init__(self, file, start, length):
         file.seek(start)
         self.file = file
@@ -248,14 +213,12 @@ class _FilePart:
 
 
 def _parse_range(header, size):
-    """Первый и последний байт запроса. None — заголовка нет, ValueError — запрос вне файла"""
     match = RANGE_RE.match(header or '')
     if not match or not any(match.groups()):
         return None
 
     first, last = match.groups()
     if not first:
-        # bytes=-500: последние 500 байт
         if int(last) == 0:
             raise ValueError('пустой диапазон')
         return max(size - int(last), 0), size - 1
@@ -266,7 +229,6 @@ def _parse_range(header, size):
 
 
 def serve_media(request, path):
-    """Запасной вариант для nginx. Как serve из Django, но с Range: без него Safari не запускает видео"""
     response = serve(request, path, document_root=settings.MEDIA_ROOT)
     if response.status_code != 200:
         return response

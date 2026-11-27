@@ -12,6 +12,7 @@ from .media_files import StoredFilesMixin
 from .media_validation import RESUME_MAX_BYTES, detect_resume_type, is_safe_docx, validate_media, validate_media_list
 from .models import (
     Complaint, ComplaintPhoto, Video, Photo, News, Procurement, LocalAct, Legislation, Vacancy, VacancyApplication,
+    SiteSettings,
 )
 
 logger = logging.getLogger(__name__)
@@ -84,7 +85,6 @@ class ProcurementSerializer(serializers.ModelSerializer):
         fields = ['id', 'number', 'contractNumber', 'supplier', 'type', 'method', 'status', 'date', 'amount', 'created_at', 'updated_at']
         read_only_fields = ['number']
 
-# ========== ДОКУМЕНТЫ ==========
 class LocalActSerializer(StoredFilesMixin, serializers.ModelSerializer):
     file_folder = 'documents'
     file_fields = ('file_url',)
@@ -113,7 +113,6 @@ class LegislationSerializer(StoredFilesMixin, serializers.ModelSerializer):
     def validate_file_url(self, value):
         return validate_media(value, 'document')
 
-# ========== ВАКАНСИИ ==========
 class VacancySerializer(serializers.ModelSerializer):
     created_at = serializers.DateTimeField(read_only=True)
     updated_at = serializers.DateTimeField(read_only=True)
@@ -132,7 +131,6 @@ class VacancySerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, attrs):
-        # при PATCH (например, только is_active) второе значение берётся из сохранённой вакансии
         salary_from = attrs.get('salary_from', getattr(self.instance, 'salary_from', None))
         salary_to = attrs.get('salary_to', getattr(self.instance, 'salary_to', None))
         if salary_from is not None and salary_to is not None and salary_to < salary_from:
@@ -140,10 +138,7 @@ class VacancySerializer(serializers.ModelSerializer):
         return attrs
 
 
-# ========== ОТКЛИКИ НА ВАКАНСИИ ==========
 class VacancyApplicationCreateSerializer(serializers.Serializer):
-    """Отклик с сайта: все поля проверяются здесь, браузеру не доверяем"""
-
     vacancy = serializers.PrimaryKeyRelatedField(queryset=Vacancy.objects.filter(is_active=True))
     full_name = serializers.CharField(min_length=2, max_length=150, trim_whitespace=True)
     phone = serializers.CharField(max_length=30, trim_whitespace=True)
@@ -151,7 +146,6 @@ class VacancyApplicationCreateSerializer(serializers.Serializer):
     comment = serializers.CharField(max_length=1000, required=False, allow_blank=True, trim_whitespace=True)
     resume = serializers.FileField(allow_empty_file=False)
     consent = serializers.BooleanField()
-    # ловушка для ботов: поле скрыто на сайте, человек его не заполнит
     website = serializers.CharField(required=False, allow_blank=True)
 
     def validate_phone(self, value):
@@ -182,7 +176,6 @@ class VacancyApplicationCreateSerializer(serializers.Serializer):
         if phone in map(international_phone, recent_phones):
             raise serializers.ValidationError({'duplicate': 'Вы уже отправили резюме на эту вакансию.'})
 
-        # общий предел на случай рассылки с разных адресов: база не должна заполниться чужими файлами
         uploaded = VacancyApplication.objects.filter(created_at__gte=since).aggregate(
             total=Sum('resume_size'),
         )['total'] or 0
@@ -195,7 +188,6 @@ class VacancyApplicationCreateSerializer(serializers.Serializer):
         vacancy = validated_data['vacancy']
         resume = validated_data['resume']
         full_name = validated_data['full_name']
-        # имя файла собираем сами: так кадровику проще, а чужие символы в него не попадут
         safe_name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', ' ', full_name).strip()
         return VacancyApplication.objects.create(
             vacancy=vacancy,
@@ -212,8 +204,6 @@ class VacancyApplicationCreateSerializer(serializers.Serializer):
 
 
 class VacancyApplicationSerializer(serializers.ModelSerializer):
-    """Для отдела кадров. Сам файл сюда не входит: его скачивают отдельным запросом"""
-
     status_label = serializers.CharField(source='get_status_display', read_only=True)
 
     class Meta:
@@ -228,13 +218,10 @@ class VacancyApplicationSerializer(serializers.ModelSerializer):
         ]
 
 
-# ========== ЖАЛОБЫ ==========
 COMPLAINT_MAX_PHOTOS = 5
 COMPLAINT_PHOTO_MAX_BYTES = 5 * 1024 * 1024
-# столько же пропускает сайт: Gmail не примет письмо больше
 COMPLAINT_PHOTOS_MAX_TOTAL = 15 * 1024 * 1024
 
-# тип фото — по первым байтам, как на сайте; имени и типу из запроса не верим
 COMPLAINT_PHOTO_TYPES = (
     ('image/jpeg', lambda head: head[:3] == b'\xff\xd8\xff'),
     ('image/png', lambda head: head[:8] == b'\x89PNG\r\n\x1a\n'),
@@ -248,9 +235,6 @@ def detect_photo_type(content):
 
 
 class ComplaintCreateSerializer(serializers.Serializer):
-    """Жалоба от сервера сайта. Капча, почта и длина полей там уже проверены,
-    здесь — повторная проверка: в базу не должно попасть то, что админка не покажет"""
-
     complaint_type = serializers.ChoiceField(choices=Complaint.TYPE_CHOICES)
     full_name = serializers.CharField(max_length=200)
     email = serializers.CharField(max_length=254)
@@ -283,7 +267,6 @@ class ComplaintCreateSerializer(serializers.Serializer):
         photos = validated_data.pop('photos', [])
         note = ''
         if photos and self._daily_limit_reached(photos):
-            # жалобу важнее сохранить, чем фото: они всё равно есть в письме
             logger.warning('Жалобы: дневной предел фото исчерпан, жалоба сохранена без фото')
             photos = []
             note = 'Фото не сохранены: за сутки прислали слишком много. Они есть в письме с этой жалобой.'
@@ -309,16 +292,12 @@ class ComplaintCreateSerializer(serializers.Serializer):
 
 
 class ComplaintPhotoSerializer(serializers.ModelSerializer):
-    """Без самого файла: его админка скачивает отдельным запросом"""
-
     class Meta:
         model = ComplaintPhoto
         fields = ['id', 'content_type', 'size']
 
 
 class ComplaintSerializer(serializers.ModelSerializer):
-    """Для сотрудников. Менять можно только статус и свою заметку"""
-
     type_label = serializers.CharField(source='get_complaint_type_display', read_only=True)
     status_label = serializers.CharField(source='get_status_display', read_only=True)
     photos = ComplaintPhotoSerializer(many=True, read_only=True)
@@ -335,3 +314,10 @@ class ComplaintSerializer(serializers.ModelSerializer):
             'incident_date', 'incident_location', 'created_at', 'updated_at',
         ]
         extra_kwargs = {'manager_note': {'max_length': 5000}}
+
+
+class SiteSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SiteSettings
+        fields = ['winter_effects', 'updated_at']
+        read_only_fields = ['updated_at']

@@ -16,7 +16,6 @@ from .contacts import manager_links
 from .telegram import send_order_notification
 
 
-# ========== ПАГИНАЦИЯ ==========
 class ProductPagination(PageNumberPagination):
     page_size = 12
     page_size_query_param = 'page_size'
@@ -29,7 +28,6 @@ class OrderPagination(PageNumberPagination):
     max_page_size = 100
 
 
-# ?ordering= на странице магазина
 PRODUCT_ORDERINGS = {
     'price': ('price', 'sort_order'),
     '-price': ('-price', 'sort_order'),
@@ -52,7 +50,6 @@ def _decimal(value):
         return None
 
 
-# ========== ТОВАРЫ ==========
 class ProductViewSet(viewsets.ModelViewSet):
     serializer_class = ProductSerializer
     permission_classes = [ProductPermission]
@@ -62,7 +59,6 @@ class ProductViewSet(viewsets.ModelViewSet):
         params = self.request.query_params
         queryset = Product.objects.all()
 
-        # скрытые товары видны только менеджерам: при редактировании и в списке с ?all=1
         manager_view = is_shop_manager(self.request.user) and (self.action != 'list' or params.get('all') == '1')
         if not manager_view:
             queryset = queryset.filter(is_active=True)
@@ -94,14 +90,12 @@ class ProductViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='filters')
     def filters(self, request):
-        """Варианты для фильтров магазина: какие объёмы и материалы есть, диапазон цен"""
         active = Product.objects.filter(is_active=True)
         present = set(active.values_list('material', flat=True))
         prices = active.aggregate(min=Min('price'), max=Max('price'))
         return Response({
             'volumes': sorted(set(active.values_list('volume', flat=True))),
             'materials': [{'value': v, 'label': label} for v, label in Product.MATERIAL_CHOICES if v in present],
-            # строкой, как цены в остальных ответах
             'price': {k: (str(v) if v is not None else None) for k, v in prices.items()},
         })
 
@@ -109,7 +103,6 @@ class ProductViewSet(viewsets.ModelViewSet):
         old_image = serializer.instance.image
         old_name, storage = old_image.name, old_image.storage
         instance = serializer.save()
-        # заменённое или удалённое фото не должно оставаться на диске
         if old_name and instance.image.name != old_name:
             storage.delete(old_name)
 
@@ -119,7 +112,6 @@ class ProductViewSet(viewsets.ModelViewSet):
         instance.delete()
 
 
-# ========== ЗАКАЗЫ ==========
 class OrderViewSet(
     mixins.CreateModelMixin,
     mixins.ListModelMixin,
@@ -136,7 +128,6 @@ class OrderViewSet(
     throttle_scope = 'shop_orders'
 
     def get_throttles(self):
-        # ограничение частоты — только на оформление заказа с сайта
         return [ScopedRateThrottle()] if self.action == 'create' else []
 
     def get_queryset(self):
@@ -151,7 +142,6 @@ class OrderViewSet(
 
     @action(detail=False, methods=['get'], url_path='export')
     def export(self, request):
-        """GET /api/shop/orders/export/ — проданные и отклонённые товары файлом .xlsx"""
         return orders_export_response()
 
     def create(self, request, *args, **kwargs):

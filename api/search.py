@@ -1,9 +1,3 @@
-"""Поиск по сайту: новости, товары, вакансии, документы и закупки.
-
-Ищет сразу на русском и кыргызском, что бы ни было выбрано на сайте. Запрос прощает окончания,
-буквы без кыргызских знаков (жанылык → жаңылык) и английскую раскладку (yjdjcnb → новости).
-Те же правила для текстов страниц — на сайте, в features/site-search/lib/text.ts.
-"""
 import re
 
 from django.db.models import Case, Func, IntegerField, Q, TextField, Value, When
@@ -39,12 +33,10 @@ CYRILLIC_RE = re.compile('[а-я]')
 
 
 def normalize(text):
-    """Регистр и буквы приводятся к одному виду. Длина строки не меняется: на этом держится поиск отрывка"""
     return text.lower().translate(NORMALIZE_TABLE)
 
 
 def stem(token):
-    """Основа слова: окончания в запросе и в тексте могут отличаться (контейнеров → контейнер, таштандыларды → таштанды)"""
     length = len(token)
     if token.isdigit() or length <= 4:
         return token
@@ -56,7 +48,6 @@ def stem(token):
 
 
 def query_variants(query):
-    """Варианты запроса в виде списков основ: сам запрос и, если он набран латиницей, он же в русской раскладке"""
     text = normalize(query)
     variants = [text]
     if LATIN_RE.search(text) and not CYRILLIC_RE.search(text):
@@ -71,8 +62,6 @@ def query_variants(query):
 
 
 class Normalized(Func):
-    """normalize() на стороне базы"""
-
     function = 'translate'
     output_field = TextField()
 
@@ -88,7 +77,6 @@ def _haystack(fields):
 
 
 def _matches(alias, variants):
-    """Подходит любой вариант запроса; внутри варианта должны найтись все слова, с начала слова"""
     any_variant = Q()
     for stems in variants:
         all_words = Q()
@@ -99,7 +87,6 @@ def _matches(alias, variants):
 
 
 def _snippet(text, variants):
-    """Отрывок вокруг найденного слова; без совпадения — начало текста"""
     flat = ' '.join((text or '').split())
     if not flat:
         return ''
@@ -116,7 +103,6 @@ def _snippet(text, variants):
     if found:
         start = max(min(found) - SNIPPET_LEAD, 0)
         if start:
-            # отрывок начинается с целого слова
             start = flat.find(' ', start) + 1
 
     end = start + SNIPPET_LENGTH
@@ -125,7 +111,6 @@ def _snippet(text, variants):
 
 
 def _search(queryset, title_fields, text_fields, variants, limit, ordering, columns):
-    """Только нужные текстовые колонки: файлы в base64 сюда не попадают"""
     return list(
         queryset
         .annotate(search_title=_haystack(title_fields), search_all=_haystack(title_fields + text_fields))
@@ -213,8 +198,6 @@ def _find_procurements(variants, limit):
 
 
 class SearchView(APIView):
-    """GET /api/search/?q=запрос&limit=5 — limit считается на каждый раздел"""
-
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'search'

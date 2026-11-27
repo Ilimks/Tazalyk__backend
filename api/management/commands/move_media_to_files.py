@@ -1,4 +1,3 @@
-"""Переносит видео, фото, новости и документы из базы в файлы. Запускается после обновления сервера."""
 from django.core.management.base import BaseCommand
 from rest_framework import serializers
 
@@ -22,7 +21,6 @@ class Command(BaseCommand):
         for serializer in SERIALIZERS:
             model = serializer.Meta.model
             fields = (*serializer.file_fields, *serializer.file_list_fields)
-            # записи тяжёлые, поэтому читаем их по одной
             for pk in model.objects.order_by().values_list('pk', flat=True):
                 record = model.objects.get(pk=pk)
                 current = {field: getattr(record, field) for field in fields}
@@ -34,11 +32,9 @@ class Command(BaseCommand):
                     continue
 
                 if stored != current:
-                    # update: дата изменения записи остаётся прежней
                     model.objects.filter(pk=pk).update(**stored)
                     moved += 1
 
-                # записи, перенесённые раньше, тоже могут быть с оглавлением по всему файлу
                 prepared += sum(make_faststart(name) for name in serializer.stored_files(model.objects.get(pk=pk)))
 
         self.stdout.write(f'Перенесено записей: {moved}, с ошибкой: {failed}, подготовлено видео: {prepared}')

@@ -5,7 +5,6 @@ from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 
-# ========== ТОВАРЫ ==========
 class Product(models.Model):
     MATERIAL_CHOICES = [
         ('plastic', 'Пластик'),
@@ -29,7 +28,6 @@ class Product(models.Model):
         validators=[MinValueValidator(Decimal('0'))],
         verbose_name='Цена, сом',
     )
-    # фото хранится файлом в MEDIA_ROOT, в базе — только путь
     image = models.FileField(upload_to='shop/products/', blank=True, verbose_name='Фото')
     in_stock = models.BooleanField(default=True, verbose_name='В наличии')
     is_featured = models.BooleanField(default=False, verbose_name='Показывать на главной')
@@ -54,7 +52,6 @@ class Product(models.Model):
         return f'{self.name_ru} ({self.volume} л)'
 
 
-# ========== ЗАКАЗЫ ==========
 class Order(models.Model):
     STATUS_CHOICES = [
         ('new', 'Новый'),
@@ -72,7 +69,6 @@ class Order(models.Model):
         ('telegram', 'Telegram'),
     ]
 
-    # номер заказа (1, 2, 3…) — его покупатель называет менеджеру в чате
     id = models.BigAutoField(primary_key=True)
     customer_name = models.CharField(max_length=150, verbose_name='Имя покупателя')
     phone = models.CharField(max_length=30, verbose_name='Телефон')
@@ -104,7 +100,6 @@ class Order(models.Model):
 
 class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items', verbose_name='Заказ')
-    # товар могут удалить из каталога — название, объём и цена копируются в позицию заказа
     product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Товар')
     product_name = models.CharField(max_length=200, verbose_name='Название товара')
     volume = models.PositiveIntegerField(verbose_name='Объём, л')

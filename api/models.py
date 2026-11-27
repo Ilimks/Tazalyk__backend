@@ -3,12 +3,11 @@ from django.db import models
 import uuid
 import time
 
-# ========== ВИДЕО ==========
 class Video(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    main_video_url = models.TextField(verbose_name="Главное видео (base64)")
+    main_video_url = models.TextField(verbose_name="Главное видео")
     gallery_videos = models.JSONField(default=list, blank=True, verbose_name="Дополнительные видео")
-    thumbnail = models.TextField(blank=True, null=True, verbose_name="Превью (base64)")
+    thumbnail = models.TextField(blank=True, null=True, verbose_name="Превью")
     caption_ru = models.CharField(max_length=160, blank=True, default='', verbose_name="Подпись (Русский)")
     caption_ky = models.CharField(max_length=160, blank=True, default='', verbose_name="Подпись (Кыргызча)")
     date = models.DateField(verbose_name="Дата")
@@ -23,10 +22,9 @@ class Video(models.Model):
     def __str__(self):
         return self.caption_ru or f"Видео от {self.date}"
 
-# ========== ФОТО ==========
 class Photo(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    main_image = models.TextField(verbose_name="Главное фото (base64)")
+    main_image = models.TextField(verbose_name="Главное фото")
     gallery_images = models.JSONField(default=list, blank=True, verbose_name="Дополнительные фото")
     caption_ru = models.CharField(max_length=160, blank=True, default='', verbose_name="Подпись (Русский)")
     caption_ky = models.CharField(max_length=160, blank=True, default='', verbose_name="Подпись (Кыргызча)")
@@ -42,14 +40,13 @@ class Photo(models.Model):
     def __str__(self):
         return self.caption_ru or f"Фото от {self.date}"
 
-# ========== НОВОСТИ ==========
 class News(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title_ru = models.CharField(max_length=255, verbose_name="Название (Русский)")
     description_ru = models.TextField(verbose_name="Описание (Русский)")
     title_ky = models.CharField(max_length=255, verbose_name="Название (Кыргызча)", blank=True, null=True)
     description_ky = models.TextField(verbose_name="Описание (Кыргызча)", blank=True, null=True)
-    image = models.TextField(blank=True, null=True, verbose_name="Изображение (base64)")
+    image = models.TextField(blank=True, null=True, verbose_name="Изображение")
     date = models.DateField(verbose_name="Дата")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
@@ -62,7 +59,6 @@ class News(models.Model):
     def __str__(self):
         return self.title_ru
 
-# ========== ЗАКУПКИ ==========
 class Procurement(models.Model):
     TYPE_CHOICES = [
         ('goods', 'Товар'),
@@ -116,11 +112,10 @@ class Procurement(models.Model):
     def __str__(self):
         return f"{self.number} - {self.contractNumber} - {self.supplier}"
 
-# ========== БАЗОВАЯ МОДЕЛЬ ДЛЯ ДОКУМЕНТОВ ==========
 class BaseDocument(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=500, verbose_name="Название документа")
-    file_url = models.TextField(verbose_name="Файл (base64)")
+    file_url = models.TextField(verbose_name="Файл")
     file_name = models.CharField(max_length=255, verbose_name="Имя файла")
     file_size = models.BigIntegerField(default=0, verbose_name="Размер файла (байт)")
     date = models.DateField(verbose_name="Дата публикации")
@@ -131,7 +126,6 @@ class BaseDocument(models.Model):
         abstract = True
         ordering = ['-date', '-created_at']
 
-# ========== ЛОКАЛЬНЫЕ АКТЫ ==========
 class LocalAct(BaseDocument):
     class Meta:
         verbose_name = 'Локальный акт'
@@ -141,7 +135,6 @@ class LocalAct(BaseDocument):
     def __str__(self):
         return self.title
 
-# ========== ЗАКОНОДАТЕЛЬСТВО КР ==========
 class Legislation(BaseDocument):
     class Meta:
         verbose_name = 'Законодательство'
@@ -151,26 +144,22 @@ class Legislation(BaseDocument):
     def __str__(self):
         return self.title
 
-# ========== ВАКАНСИИ ==========
 class Vacancy(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title_ru = models.CharField(max_length=200, verbose_name="Должность (Русский)")
     title_ky = models.CharField(max_length=200, blank=True, verbose_name="Должность (Кыргызча)")
     description_ru = models.TextField(blank=True, verbose_name="Обязанности и условия (Русский)")
     description_ky = models.TextField(blank=True, verbose_name="Обязанности и условия (Кыргызча)")
-    # каждая строка — отдельный пункт списка на сайте
     requirements_ru = models.TextField(blank=True, verbose_name="Требования (Русский)")
     requirements_ky = models.TextField(blank=True, verbose_name="Требования (Кыргызча)")
     schedule_ru = models.CharField(max_length=200, blank=True, verbose_name="График работы (Русский)")
     schedule_ky = models.CharField(max_length=200, blank=True, verbose_name="График работы (Кыргызча)")
-    # зарплата в сомах; оба поля пустые — «по договорённости»
     salary_from = models.PositiveIntegerField(
         null=True, blank=True, validators=[MaxValueValidator(10_000_000)], verbose_name="Зарплата от, сом"
     )
     salary_to = models.PositiveIntegerField(
         null=True, blank=True, validators=[MaxValueValidator(10_000_000)], verbose_name="Зарплата до, сом"
     )
-    # неактивная вакансия скрыта с сайта, но остаётся в админке
     is_active = models.BooleanField(default=True, verbose_name="Активна")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
@@ -195,7 +184,6 @@ class Vacancy(models.Model):
         return self.title_ru
 
 
-# ========== ОТКЛИКИ НА ВАКАНСИИ ==========
 class VacancyApplication(models.Model):
     STATUS_CHOICES = [
         ('new', 'Новый'),
@@ -206,7 +194,6 @@ class VacancyApplication(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    # вакансию могут удалить, поэтому название копируется в отклик
     vacancy = models.ForeignKey(
         Vacancy, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='applications', verbose_name="Вакансия",
@@ -216,8 +203,6 @@ class VacancyApplication(models.Model):
     phone = models.CharField(max_length=30, verbose_name="Телефон")
     email = models.EmailField(blank=True, verbose_name="Электронная почта")
     comment = models.TextField(blank=True, verbose_name="Комментарий кандидата")
-    # резюме — личные данные: файл лежит в базе, а не в публичной папке /media/,
-    # поэтому получить его можно только через API с правами отдела кадров
     resume_content = models.BinaryField(verbose_name="Файл резюме")
     resume_name = models.CharField(max_length=255, verbose_name="Имя файла")
     resume_type = models.CharField(max_length=100, verbose_name="Тип файла")
@@ -239,11 +224,7 @@ class VacancyApplication(models.Model):
         return f'{self.full_name} — {self.vacancy_title}'
 
 
-# ========== ЖАЛОБЫ ==========
 class Complaint(models.Model):
-    """Жалоба с формы сайта. Приходит сюда вся, любого типа; письмо на почту уходит отдельно"""
-
-    # те же значения, что в форме сайта (ComplaintForm.tsx)
     TYPE_CHOICES = [
         ('waste_issue', 'Проблема с вывозом отходов'),
         ('billing_error', 'Неправильное начисление за вывоз мусора'),
@@ -286,8 +267,6 @@ class Complaint(models.Model):
 
 
 class ComplaintPhoto(models.Model):
-    # фото к жалобе — личные данные (дворы, лица, номера машин): файл лежит в базе,
-    # а не в публичной папке /media/, и отдаётся только сотрудникам через API
     complaint = models.ForeignKey(Complaint, on_delete=models.CASCADE, related_name='photos', verbose_name="Жалоба")
     content = models.BinaryField(verbose_name="Файл")
     content_type = models.CharField(max_length=50, verbose_name="Тип файла")
@@ -301,3 +280,20 @@ class ComplaintPhoto(models.Model):
 
     def __str__(self):
         return f'Фото {self.position + 1} — {self.complaint_id}'
+
+
+class SiteSettings(models.Model):
+    winter_effects = models.BooleanField('Снег и Дед Мороз на сайте', default=False)
+    updated_at = models.DateTimeField('Изменено', auto_now=True)
+
+    class Meta:
+        verbose_name = 'Оформление сайта'
+        verbose_name_plural = 'Оформление сайта'
+
+    def __str__(self):
+        return 'Оформление сайта'
+
+    @classmethod
+    def load(cls):
+        settings_row, _ = cls.objects.get_or_create(pk=1)
+        return settings_row

@@ -1,4 +1,3 @@
-"""Проверки защиты API: подбор пароля, удалённые опасные адреса, CORS, лишняя информация."""
 import base64
 from unittest import mock
 
@@ -16,7 +15,6 @@ from .models import News
 
 class SecurityTests(APITestCase):
     def setUp(self):
-        # лимиты попыток хранятся в кэше — каждый тест начинает с чистого счётчика
         cache.clear()
 
     def test_login_bruteforce_is_throttled(self):
@@ -28,7 +26,6 @@ class SecurityTests(APITestCase):
         self.assertEqual(codes[5], 429)
 
     def test_spoofed_forwarded_for_does_not_reset_login_limit(self):
-        # без прокси (DRF_NUM_PROXIES=0) X-Forwarded-For не влияет на счётчик
         for i in range(5):
             self.client.post('/api/token/', {'username': 'a', 'password': 'b'}, format='json', HTTP_X_FORWARDED_FOR=f'10.0.0.{i}')
         res = self.client.post('/api/token/', {'username': 'a', 'password': 'b'}, format='json', HTTP_X_FORWARDED_FOR='10.9.9.9')
@@ -118,7 +115,6 @@ class LoginMonitoringTests(APITestCase):
             for _ in range(4):
                 self.login('10.1.1.1')
             self.assertEqual(urlopen.call_count, 0)
-            # пятая ошибка срабатывает сразу по адресу и по логину, следующие в этот час не шлют
             self.login('10.1.1.1')
             self.assertEqual(urlopen.call_count, 2)
             self.login('10.1.1.2')

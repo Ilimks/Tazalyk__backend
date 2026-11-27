@@ -1,4 +1,3 @@
-"""Выгрузка проданных и отклонённых товаров в Excel для админки."""
 from django.utils import timezone
 from openpyxl import Workbook
 from openpyxl.styles import Font
@@ -20,11 +19,9 @@ from api.excel import (
 
 from .models import OrderItem
 
-# заказы в работе (новые и ожидающие оплаты) в выгрузку не входят: их судьба ещё не решена
 SOLD_STATUSES = ('paid', 'completed')
 REJECTED_STATUSES = ('cancelled',)
 
-# заголовок, ширина колонки, выравнивание
 COLUMNS = [
     ('№ заказа', 10, 'center'),
     ('Дата заказа', 13, 'center'),
@@ -48,7 +45,6 @@ def _write_row(sheet, row, item):
     number, date, name, volume, quantity, price, amount, customer, phone, delivery, status = cells
 
     number.value = order.id
-    # Excel не хранит часовой пояс, поэтому дата — местная, без времени
     date.value = timezone.localtime(order.created_at).date()
     date.number_format = 'DD.MM.YYYY'
     set_text(name, item.product_name)
@@ -95,7 +91,6 @@ def _write_sheet(sheet, title, statuses):
 
 
 def build_orders_workbook():
-    """Два листа: суммы проданного и отклонённого нельзя складывать в один итог"""
     workbook = Workbook()
     workbook.properties.title = 'Проданные и отклонённые товары'
     workbook.properties.creator = 'МП «Тазалык»'

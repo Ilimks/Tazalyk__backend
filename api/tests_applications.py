@@ -1,4 +1,3 @@
-"""Отклики на вакансии: отправка с сайта, закрытый доступ к личным данным, файл резюме."""
 from io import BytesIO
 
 from django.contrib.auth.models import Group, User
@@ -31,7 +30,6 @@ class ApplicationsTestCase(APITestCase):
         cls.content_manager.groups.add(Group.objects.get_or_create(name='content_managers')[0])
 
     def setUp(self):
-        # лимит частоты общий на все тесты
         cache.clear()
 
     def payload(self, **changes):

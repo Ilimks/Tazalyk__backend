@@ -1,12 +1,3 @@
-"""Вход в админку для сотрудника, который разбирает жалобы: он видит только раздел «Жалобы».
-
-    python manage.py create_complaints_user                   # логин complaints_manager
-    python manage.py create_complaints_user --reset-password  # новый пароль уже созданному сотруднику
-
-Пароль берётся из COMPLAINTS_MANAGER_PASSWORD (переменная окружения или строка в .env).
-Если его нет — создаётся случайный и печатается один раз. Других пользователей команда не трогает
-(в отличие от create_users.py, который сбрасывает пароли всем).
-"""
 import os
 
 from django.conf import settings
@@ -34,7 +25,6 @@ class Command(BaseCommand):
         if user.is_superuser:
             raise CommandError(f'«{username}» — суперпользователь, ему нельзя оставить только жалобы. Выберите другой логин.')
 
-        # только жалобы: никаких других разделов и входа в /admin/ Django
         user.is_staff = False
         user.groups.set([group])
 

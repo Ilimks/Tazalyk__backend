@@ -11,10 +11,8 @@ from rest_framework import serializers
 from .contacts import customer_links, is_valid_phone, PHONE_RE
 from .models import Order, OrderItem, Product
 
-# ========== ФОТО ТОВАРА ==========
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 DATA_URL_RE = re.compile(r'^data:(image/(?:jpeg|png|webp));base64,(.+)$', re.S)
-# расширение и «подпись» начала файла для каждого разрешённого типа
 IMAGE_SIGNATURES = {
     'image/jpeg': ('jpg', lambda b: b[:3] == b'\xff\xd8\xff'),
     'image/png': ('png', lambda b: b[:8] == b'\x89PNG\r\n\x1a\n'),
@@ -23,11 +21,6 @@ IMAGE_SIGNATURES = {
 
 
 class DataURLImageField(serializers.FileField):
-    """Принимает фото как data URL (так его отдаёт админка), сохраняет обычным файлом.
-
-    Строка-ссылка вместо data URL значит «фото не менялось», пустая строка — «удалить фото».
-    """
-
     def to_internal_value(self, data):
         if data in ('', None):
             return ''
@@ -40,7 +33,6 @@ class DataURLImageField(serializers.FileField):
         if not match:
             raise serializers.ValidationError('Допустимы только JPEG, PNG и WebP.')
         mime, payload = match.groups()
-        # base64 длиннее исходного файла на треть — отсекаем огромные строки до декодирования
         if len(payload) > MAX_IMAGE_BYTES * 4 // 3 + 4:
             raise serializers.ValidationError('Фото больше 5 МБ.')
         try:
@@ -57,7 +49,6 @@ class DataURLImageField(serializers.FileField):
         if not value:
             return None
         url = value.url
-        # на сервере за прокси адрес задаётся явно, чтобы не получить http:// на https-сайте
         base = getattr(settings, 'PUBLIC_MEDIA_BASE_URL', '')
         if base:
             return f'{base.rstrip("/")}{url}'
@@ -82,7 +73,6 @@ class ProductSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at', 'updated_at']
 
 
-# ========== ЗАКАЗЫ ==========
 TELEGRAM_RE = re.compile(r'^@?[A-Za-z0-9_]{5,32}$')
 MAX_ORDER_LINES = 20
 
@@ -93,8 +83,6 @@ class OrderItemInputSerializer(serializers.Serializer):
 
 
 class OrderCreateSerializer(serializers.Serializer):
-    """Оформление заказа с сайта. Цены и сумма считаются здесь, а не берутся у браузера."""
-
     customer_name = serializers.CharField(min_length=2, max_length=150, trim_whitespace=True)
     phone = serializers.CharField(max_length=30, trim_whitespace=True)
     telegram = serializers.CharField(max_length=64, required=False, allow_blank=True, trim_whitespace=True)
@@ -103,11 +91,9 @@ class OrderCreateSerializer(serializers.Serializer):
     address = serializers.CharField(max_length=300, required=False, allow_blank=True, trim_whitespace=True)
     comment = serializers.CharField(max_length=1000, required=False, allow_blank=True, trim_whitespace=True)
     items = OrderItemInputSerializer(many=True)
-    # ловушка для ботов: поле скрыто на сайте, человек его не заполняет
     website = serializers.CharField(required=False, allow_blank=True)
 
     def validate_phone(self, value):
-        # по этому номеру менеджер пишет в мессенджер, поэтому нужен полный номер
         if not PHONE_RE.match(value) or not is_valid_phone(value):
             raise serializers.ValidationError('Укажите номер телефона, например +996 555 123 456.')
         return value
@@ -123,7 +109,6 @@ class OrderCreateSerializer(serializers.Serializer):
         if len(items) > MAX_ORDER_LINES:
             raise serializers.ValidationError(f'Не больше {MAX_ORDER_LINES} разных товаров в заказе.')
 
-        # один и тот же товар, добавленный дважды, складываем в одну позицию
         quantities = {}
         for item in items:
             quantities[item['product']] = quantities.get(item['product'], 0) + item['quantity']
@@ -180,8 +165,6 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
 
 class OrderSerializer(serializers.ModelSerializer):
-    """Заказ для админки: менять можно только статус и заметку менеджера."""
-
     items = OrderItemSerializer(many=True, read_only=True)
     status_label = serializers.CharField(source='get_status_display', read_only=True)
     delivery_label = serializers.CharField(source='get_delivery_method_display', read_only=True)

@@ -21,6 +21,7 @@ from .list_search import ListSearchFilter
 from .media_files import DeletesStoredFilesMixin
 from .models import (
     Complaint, ComplaintPhoto, Video, Photo, News, Procurement, LocalAct, Legislation, Vacancy, VacancyApplication,
+    SiteSettings,
 )
 from .security_events import log_login_success, log_login_throttled
 from rest_framework import filters
@@ -30,8 +31,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# ========== ПРАВА ДОСТУПА ==========
-# Какая группа пользователей может менять раздел (группы создаёт create_users.py)
 SECTION_GROUPS = {
     'videos': 'content_managers',
     'photos': 'content_managers',
@@ -39,14 +38,12 @@ SECTION_GROUPS = {
     'procurements': 'procurement_managers',
     'local_acts': 'legal_managers',
     'legislation': 'legal_managers',
-    # отдел кадров (группу создаёт миграция 0016, сотрудника — manage.py create_hr_user)
     'vacancies': 'hr_managers',
-    # жалобы граждан (группу создаёт миграция 0019, сотрудника — manage.py create_complaints_user)
     'complaints': 'complaints_managers',
+    'site_settings': 'content_managers',
 }
 
 def can_edit_section(user, section):
-    """Суперпользователь или сотрудник из группы раздела"""
     if not user or not user.is_authenticated:
         return False
     if user.is_superuser:
@@ -54,17 +51,12 @@ def can_edit_section(user, section):
     return user.groups.filter(name=SECTION_GROUPS[section]).exists()
 
 class SectionPermission(BasePermission):
-    """Читать могут все (сайт), менять — суперпользователь или группа раздела"""
-
     def has_permission(self, request, view):
         if request.method in SAFE_METHODS:
             return True
         return can_edit_section(request.user, view.section)
 
-# ========== ПАГИНАЦИЯ ==========
 class MediaPagination(PageNumberPagination):
-    """Записи с файлами в base64 тяжёлые: один запрос на 100 штук весил сотни мегабайт.
-    Посетителям — до 20 записей на страницу, сотрудникам в админке — как раньше."""
     page_size_query_param = 'page_size'
     max_page_size = 100
     public_max_page_size = 20
@@ -100,7 +92,6 @@ class VacancyPagination(PageNumberPagination):
     page_size_query_param = 'page_size'
     max_page_size = 100
 
-# ========== ВИДЕО ==========
 class VideoViewSet(DeletesStoredFilesMixin, viewsets.ModelViewSet):
     queryset = Video.objects.all().order_by('-date', '-created_at')
     serializer_class = VideoSerializer
@@ -108,7 +99,6 @@ class VideoViewSet(DeletesStoredFilesMixin, viewsets.ModelViewSet):
     section = 'videos'
     pagination_class = VideoPagination
 
-# ========== ФОТО ==========
 class PhotoViewSet(DeletesStoredFilesMixin, viewsets.ModelViewSet):
     queryset = Photo.objects.all().order_by('-date', '-created_at')
     serializer_class = PhotoSerializer
@@ -116,9 +106,8 @@ class PhotoViewSet(DeletesStoredFilesMixin, viewsets.ModelViewSet):
     section = 'photos'
     pagination_class = PhotoPagination
 
-# ========== НОВОСТИ ==========
 class NewsViewSet(DeletesStoredFilesMixin, viewsets.ModelViewSet):
-    queryset = News.objects.all().order_by('-date', '-created_at')   # исправлено
+    queryset = News.objects.all().order_by('-date', '-created_at')
     serializer_class = NewsSerializer
     permission_classes = [SectionPermission]
     section = 'news'
@@ -134,7 +123,6 @@ class NewsViewSet(DeletesStoredFilesMixin, viewsets.ModelViewSet):
             queryset = queryset.filter(date__year=year)
         return queryset
 
-# ========== ЗАКУПКИ ==========
 class ProcurementViewSet(viewsets.ModelViewSet):
     queryset = Procurement.objects.all().order_by('-date', '-created_at')
     serializer_class = ProcurementSerializer
@@ -145,13 +133,11 @@ class ProcurementViewSet(viewsets.ModelViewSet):
     search_text = ['number', 'contractNumber', 'supplier']
     
     def create(self, request, *args, **kwargs):
-        # тело запроса в лог не пишем: там данные поставщиков и суммы договоров
         data = request.data.copy()
 
         if 'id' not in data or not data['id']:
             data['id'] = str(int(time.time() * 1000))
 
-        # номер закупки сервер присваивает сам
         data.pop('number', None)
 
         required_fields = ['contractNumber', 'supplier', 'type', 'status', 'date', 'amount']
@@ -162,7 +148,6 @@ class ProcurementViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-        # сумму не переводим во float — DecimalField сам разбирает строку без потери копеек
         serializer = self.get_serializer(data=data)
         if serializer.is_valid():
             serializer.save()
@@ -171,7 +156,6 @@ class ProcurementViewSet(viewsets.ModelViewSet):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-# ========== ЛОКАЛЬНЫЕ АКТЫ ==========
 class LocalActViewSet(DeletesStoredFilesMixin, viewsets.ModelViewSet):
     queryset = LocalAct.objects.all().order_by('-date', '-created_at')
     serializer_class = LocalActSerializer
@@ -181,7 +165,6 @@ class LocalActViewSet(DeletesStoredFilesMixin, viewsets.ModelViewSet):
     filter_backends = [ListSearchFilter]
     search_text = ['title', 'file_name']
 
-# ========== ЗАКОНОДАТЕЛЬСТВО ==========
 class LegislationViewSet(DeletesStoredFilesMixin, viewsets.ModelViewSet):
     queryset = Legislation.objects.all().order_by('-date', '-created_at')
     serializer_class = LegislationSerializer
@@ -191,7 +174,6 @@ class LegislationViewSet(DeletesStoredFilesMixin, viewsets.ModelViewSet):
     filter_backends = [ListSearchFilter]
     search_text = ['title', 'file_name']
 
-# ========== ВАКАНСИИ ==========
 class VacancyViewSet(viewsets.ModelViewSet):
     serializer_class = VacancySerializer
     permission_classes = [SectionPermission]
@@ -203,22 +185,17 @@ class VacancyViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = Vacancy.objects.all().order_by('-created_at')
         params = self.request.query_params
-        # неактивные вакансии видит только отдел кадров: в списке админки (?all=1) и при редактировании
         manager_view = can_edit_section(self.request.user, self.section) and (
             self.action != 'list' or params.get('all') == '1'
         )
         if not manager_view:
             return queryset.filter(is_active=True)
-        # фильтр «активные / неактивные» в админке
         is_active = params.get('is_active')
         if self.action == 'list' and is_active in ('1', '0'):
             queryset = queryset.filter(is_active=is_active == '1')
         return queryset
 
-# ========== ОТКЛИКИ НА ВАКАНСИИ ==========
 class ApplicationPermission(BasePermission):
-    """Откликнуться может любой посетитель, всё остальное — только отдел кадров: здесь личные данные"""
-
     def has_permission(self, request, view):
         return view.action == 'create' or can_edit_section(request.user, 'vacancies')
 
@@ -245,11 +222,9 @@ class VacancyApplicationViewSet(
     throttle_scope = 'vacancy_applications'
 
     def get_throttles(self):
-        # ограничение частоты — только на отправку резюме с сайта
         return [ScopedRateThrottle()] if self.action == 'create' else []
 
     def get_queryset(self):
-        # файл резюме не читаем из базы, пока его не попросили
         queryset = VacancyApplication.objects.defer('resume_content')
         status_filter = self.request.query_params.get('status')
         if status_filter in dict(VacancyApplication.STATUS_CHOICES):
@@ -262,43 +237,33 @@ class VacancyApplicationViewSet(
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        # бот заполнил скрытое поле: отвечаем как обычно, но ничего не сохраняем
         if not serializer.validated_data.get('website'):
             serializer.save()
         return Response({'ok': True}, status=status.HTTP_201_CREATED)
 
     def export(self, request):
-        """GET /api/vacancy-applications/export/ — все отклики файлом .xlsx"""
         return applications_export_response()
 
     def resume(self, request, pk=None):
-        """GET /api/vacancy-applications/<id>/resume/ — файл резюме для отдела кадров"""
         application = self.get_object()
         return HttpResponse(
             bytes(application.resume_content),
             content_type=application.resume_type,
             headers={
                 'Content-Disposition': content_disposition_header(True, application.resume_name),
-                # личные данные не должны оставаться в кэше браузера и прокси
                 'Cache-Control': 'no-store',
             },
         )
 
-# ========== ЖАЛОБЫ ==========
 def has_intake_token(request):
-    """Запрос пришёл от сервера сайта: он проверил капчу и подписал запрос общим ключом"""
     expected = settings.COMPLAINTS_INTAKE_TOKEN
     provided = request.headers.get('X-Intake-Token', '')
-    # короткий ключ подбирается, пустой — значит, приём не настроен
     if len(expected) < 32 or not provided:
         return False
     return hmac.compare_digest(provided.encode(), expected.encode())
 
 
 class ComplaintPermission(BasePermission):
-    """Присылает жалобы только сервер сайта. Смотреть и обрабатывать — сотрудники с доступом к жалобам,
-    удалять — только администратор: это обращения граждан, на которые нужно ответить"""
-
     def has_permission(self, request, view):
         if view.action == 'create':
             return has_intake_token(request)
@@ -328,7 +293,6 @@ class ComplaintViewSet(
     search_phone = ['phone']
 
     def get_queryset(self):
-        # сами файлы фото не читаем из базы: в списке нужны только их номера и размеры
         photos = ComplaintPhoto.objects.defer('content')
         queryset = Complaint.objects.prefetch_related(Prefetch('photos', queryset=photos))
         params = self.request.query_params
@@ -350,7 +314,6 @@ class ComplaintViewSet(
         return Response({'id': str(complaint.id)}, status=status.HTTP_201_CREATED)
 
     def photo(self, request, pk=None, photo_id=None):
-        """GET /api/complaints/<id>/photos/<photo_id>/ — фото к жалобе для сотрудника"""
         complaint = self.get_object()
         photo = get_object_or_404(ComplaintPhoto, pk=photo_id, complaint=complaint)
         extension = photo.content_type.split('/')[-1].replace('jpeg', 'jpg')
@@ -359,14 +322,10 @@ class ComplaintViewSet(
             content_type=photo.content_type,
             headers={
                 'Content-Disposition': content_disposition_header(False, f'zhaloba-foto-{photo.position + 1}.{extension}'),
-                # личные данные не должны оставаться в кэше браузера и прокси
                 'Cache-Control': 'no-store',
             },
         )
 
-# ========== ВХОД В АДМИНКУ ==========
-# Стандартный вход simplejwt с ограничением числа попыток: без него пароли можно было перебирать.
-# Лимиты — REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']['login'/'token_refresh'] в settings.py
 class ThrottledTokenObtainPairView(TokenObtainPairView):
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'login'
@@ -376,7 +335,6 @@ class ThrottledTokenObtainPairView(TokenObtainPairView):
         if response.status_code == 200:
             log_login_success(request, request.data.get('username'))
             set_auth_cookies(response, response.data['access'], response.data['refresh'])
-            # токены остаются только в cookie: скрипт на странице их не увидит
             response.data = {'ok': True}
         return response
 
@@ -403,8 +361,6 @@ class ThrottledTokenRefreshView(TokenRefreshView):
 
 
 class LogoutView(APIView):
-    """Токен перестаёт действовать на сервере: выход работает, даже если токен успели скопировать"""
-
     authentication_classes = []
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
@@ -417,21 +373,29 @@ class LogoutView(APIView):
             try:
                 RefreshToken(raw_token).blacklist()
             except TokenError:
-                # токен уже истёк или отозван: отзывать нечего
                 pass
 
         response = Response(status=status.HTTP_204_NO_CONTENT)
         delete_auth_cookies(response)
         return response
 
-# Импорт из localStorage (/api/import-data/) удалён: любой вошедший сотрудник мог им
-# перезаписать все разделы в обход проверки прав и валидации.
+class SiteSettingsView(APIView):
+    permission_classes = [SectionPermission]
+    section = 'site_settings'
 
-# ========== ТЕКУЩИЙ ПОЛЬЗОВАТЕЛЬ ==========
+    def get(self, request):
+        return Response(SiteSettingsSerializer(SiteSettings.load()).data)
+
+    def patch(self, request):
+        serializer = SiteSettingsSerializer(SiteSettings.load(), data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        logger.info('Оформление сайта изменил %s: %s', request.user.username, serializer.validated_data)
+        return Response(serializer.data)
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def me(request):
-    """Роль сотрудника для админки: суперпользователь и группы (раньше админка угадывала роль по логину)"""
     user = request.user
     return Response({
         'username': user.username,
@@ -439,7 +403,6 @@ def me(request):
         'groups': list(user.groups.values_list('name', flat=True)),
     })
 
-# ========== HEALTH CHECK ==========
 @api_view(['GET'])
 def health_check(request):
     return Response({'status': 'ok', 'message': 'Server is running'})

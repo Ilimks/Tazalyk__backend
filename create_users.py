@@ -9,7 +9,6 @@ from django.contrib.auth.models import User, Group
 
 
 def require_password(name):
-    """Пароль берётся только из настроек: значения по умолчанию в коде попали в открытый репозиторий"""
     password = settings.ENV.get(name)
     if not password:
         raise SystemExit(f'Задайте {name} в .env: без него сотрудника не создать')
@@ -40,7 +39,6 @@ def create_users_and_groups():
     for user_data in users:
         user = User.objects.filter(username=user_data['username']).first()
         if user:
-            # пароль существующего сотрудника не трогаем: иначе скрипт отменял бы смену паролей
             print(f"⚠️ Пользователь уже существует: {user_data['username']}")
         else:
             user = User(

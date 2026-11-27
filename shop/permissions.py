@@ -10,16 +10,11 @@ def is_shop_manager(user):
 
 
 class ProductPermission(BasePermission):
-    """Каталог читают все, менять могут менеджеры магазина и администратор"""
-
     def has_permission(self, request, view):
         return request.method in SAFE_METHODS or is_shop_manager(request.user)
 
 
 class OrderPermission(BasePermission):
-    """Оформить заказ может любой посетитель, смотреть и менять заказы — только менеджеры.
-    Удалять заказы может только администратор: это история продаж."""
-
     def has_permission(self, request, view):
         if view.action == 'create':
             return True

@@ -1,4 +1,3 @@
-"""Жалобы: приём только от сервера сайта, закрытый доступ к личным данным, фото."""
 from django.contrib.auth.models import Group, User
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -89,7 +88,6 @@ class IntakeFromSiteTests(ComplaintsTestCase):
         complaint = self.complaint(photos=[
             photo(),
             photo(PNG, 'b.png', 'image/png'),
-            # тип из запроса неверный — берётся по содержимому
             photo(HEIC, 'c.jpg', 'image/jpeg'),
         ])
         photos = list(complaint.photos.all())
@@ -121,7 +119,6 @@ class IntakeFromSiteTests(ComplaintsTestCase):
 
 class IntakeTokenTests(ComplaintsTestCase):
     def test_without_token_complaint_is_refused(self):
-        # иначе капчу сайта можно обойти, отправляя жалобы прямо в API
         self.assertIn(self.send(token=None).status_code, (401, 403))
         self.assertFalse(Complaint.objects.exists())
 
@@ -164,7 +161,6 @@ class StaffAccessTests(ComplaintsTestCase):
         item = next(row for row in res.data['results'] if row['id'] == str(self.waste.pk))
         self.assertEqual(item['type_label'], 'Проблема с вывозом отходов')
         self.assertEqual(item['status_label'], 'Новая')
-        # в списке только сведения о фото, без самих файлов
         self.assertEqual(item['photos'], [{'id': self.waste.photos.get().pk, 'content_type': 'image/jpeg', 'size': len(JPEG)}])
 
     def test_filters_by_type_and_status(self):

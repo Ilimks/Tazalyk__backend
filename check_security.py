@@ -1,7 +1,3 @@
-"""Скрипт проверки безопасности Django проекта
-Запуск: python check_security.py
-"""
-
 import os
 import sys
 import re
@@ -170,7 +166,6 @@ def check_security():
     except Exception as e:
         warnings.append(f"⚠️ Проблемы в безопасности: {e}")
     
-    # 12. Проверка CSRF настроек
     print("12. Проверка CSRF настроек...")
     if hasattr(settings, 'CSRF_COOKIE_HTTPONLY') and settings.CSRF_COOKIE_HTTPONLY:
         good.append("✅ CSRF_COOKIE_HTTPONLY=True")

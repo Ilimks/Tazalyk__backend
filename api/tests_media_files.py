@@ -1,4 +1,3 @@
-"""Видео и превью как файлы: загрузка, правка, удаление, перенос старых записей, отдача по частям."""
 import base64
 import shutil
 import subprocess
@@ -17,7 +16,6 @@ from .media_files import _needs_faststart, make_faststart
 from .models import Video
 
 MEDIA_DIR = tempfile.mkdtemp()
-# настоящее начало MP4 и JPEG: сервер сверяет содержимое с типом
 MP4 = b'\x00\x00\x00\x18ftypmp42' + bytes(range(256)) * 4
 JPEG = b'\xff\xd8\xff\xe0' + b'preview' * 20
 
@@ -94,7 +92,6 @@ class VideoFilesTests(APITestCase):
 
         self.assertEqual(res.status_code, 200, res.data)
         self.assertEqual(self.stored_files(), before)
-        # домен в базу не попадает: иначе после смены адреса API ссылки бы умерли
         self.assertTrue(Video.objects.get(pk=created['id']).main_video_url.startswith('/media/'))
 
     def test_replaced_file_is_deleted(self):

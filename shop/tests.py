@@ -14,7 +14,6 @@ from rest_framework.test import APITestCase
 from .contacts import international_phone
 from .models import Order, OrderItem, Product
 
-# минимальный настоящий PNG 1×1
 PNG_1PX = base64.b64decode(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
 )
@@ -48,7 +47,6 @@ class ShopApiTests(APITestCase):
         self.manager.groups.add(Group.objects.get(name='shop_managers'))
         self.content = User.objects.create_user('content_manager', password='x')
 
-    # ---------- каталог ----------
     def test_public_list_hides_inactive(self):
         res = self.client.get('/api/shop/products/')
         self.assertEqual(res.status_code, 200)
@@ -89,7 +87,6 @@ class ShopApiTests(APITestCase):
         self.assertTrue(res.data['image'].startswith('http://testserver/media/shop/products/'))
         self.assertTrue(res.data['image'].endswith('.png'))
 
-        # ссылка вместо data URL — фото не меняется
         product_id = res.data['id']
         res = self.client.patch(f'/api/shop/products/{product_id}/', {'image': res.data['image'], 'price': '2600'}, format='json')
         self.assertEqual(res.status_code, 200, res.data)
@@ -117,7 +114,6 @@ class ShopApiTests(APITestCase):
         )
         self.assertEqual(res.status_code, 400)
 
-    # ---------- заказы ----------
     def _order(self, **overrides):
         data = {
             'customer_name': 'Айбек',
@@ -148,10 +144,10 @@ class ShopApiTests(APITestCase):
 
     @mock.patch('shop.views.send_order_notification', return_value=False)
     def test_order_validation(self, _):
-        self.assertEqual(self._order(delivery_method='delivery').status_code, 400)  # нет адреса
+        self.assertEqual(self._order(delivery_method='delivery').status_code, 400)
         self.assertEqual(self._order(delivery_method='delivery', address='ул. Токтогула 1').status_code, 201)
         self.assertEqual(self._order(phone='позвоните мне').status_code, 400)
-        self.assertEqual(self._order(website='http://spam').status_code, 400)  # ловушка для ботов
+        self.assertEqual(self._order(website='http://spam').status_code, 400)
 
     @mock.patch('shop.views.send_order_notification', return_value=True)
     def test_buyer_gets_manager_links_with_order_text(self, _):
@@ -163,7 +159,6 @@ class ShopApiTests(APITestCase):
         text = unquote(res.data['whatsapp_url'].split('?text=')[1])
         self.assertIn(f'№{res.data["number"]}', text)
         self.assertIn('32 000 сом', text)
-        # личные данные покупателя не проходят через адрес ссылки
         self.assertNotIn('Айбек', text)
         self.assertNotIn('555', text)
 
@@ -179,7 +174,7 @@ class ShopApiTests(APITestCase):
     @mock.patch('shop.views.send_order_notification', return_value=False)
     def test_contact_and_phone_are_validated(self, _):
         self.assertEqual(self._order(contact_method='viber').status_code, 400)
-        self.assertEqual(self._order(phone='123-45-67').status_code, 400)  # неполный номер
+        self.assertEqual(self._order(phone='123-45-67').status_code, 400)
         self.assertEqual(self._order(phone='0555 123 456').status_code, 201)
 
     def test_phone_is_converted_to_international(self):
@@ -216,7 +211,6 @@ class ShopApiTests(APITestCase):
                 OrderItem.objects.create(order=order, product_name=product, volume=240, price=1, quantity=1)
         self.client.force_authenticate(self.manager)
         found = lambda q: [row['customer_name'] for row in self.client.get('/api/shop/orders/', {'search': q}).data['results']]
-        # два подходящих товара — заказ в списке один раз
         self.assertEqual(found('контейнер'), ['Асанов Азамат'])
         self.assertEqual(found('0700111222'), ['Асанов Азамат'])
         self.assertEqual(found('олег'), ['Ким Олег'])
@@ -239,7 +233,6 @@ class ShopApiTests(APITestCase):
         order = Order.objects.get(id=number)
         self.assertEqual(order.status, 'paid')
         self.assertEqual(order.total, Decimal('32000'))
-        # удалять заказы может только администратор
         self.assertEqual(self.client.delete(f'/api/shop/orders/{number}/').status_code, 403)
 
     @mock.patch('shop.views.send_order_notification', return_value=False)

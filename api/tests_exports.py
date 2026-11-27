@@ -1,4 +1,3 @@
-"""Выгрузка закупок в Excel: доступ, полнота данных, оформление и защита от формул."""
 from datetime import date
 from decimal import Decimal
 from io import BytesIO

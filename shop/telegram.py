@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 
 
 def send_order_notification(order):
-    """Отправляет новый заказ в Telegram-чат менеджеров. Ошибка не мешает оформлению заказа."""
     chat_id = getattr(settings, 'TELEGRAM_ORDERS_CHAT_ID', '')
     if not getattr(settings, 'TELEGRAM_BOT_TOKEN', '') or not chat_id:
         logger.warning('Telegram для заказов не настроен: заказ №%s не отправлен', order.id)
@@ -43,7 +42,6 @@ def send_order_notification(order):
 
 
 def send_security_alert(text):
-    """Оповещение о подозрительной активности в отдельный чат: текст простой, без разметки"""
     chat_id = getattr(settings, 'TELEGRAM_ALERTS_CHAT_ID', '')
     if not getattr(settings, 'TELEGRAM_BOT_TOKEN', '') or not chat_id:
         logger.warning('Telegram для оповещений не настроен: %s', text)
@@ -64,6 +62,5 @@ def _send_message(chat_id, text, parse_mode=None):
         with urllib.request.urlopen(request, timeout=5) as response:
             return response.status == 200
     except Exception as exc:
-        # в тексте ошибки может оказаться адрес с токеном бота — пишем только тип ошибки
         logger.error('Не удалось отправить сообщение в Telegram: %s', type(exc).__name__)
         return False

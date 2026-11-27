@@ -1,4 +1,3 @@
-"""Поиск по сайту: оба языка, окончания, кыргызские буквы, раскладка и то, что наружу не попадает."""
 import json
 from unittest import mock
 
@@ -85,7 +84,6 @@ class SearchApiTests(APITestCase):
         self.assertNotIn('news', self.types('контейнеры ташкент'))
 
     def test_match_starts_at_the_beginning_of_a_word(self):
-        # «акт» не должно находиться внутри другого слова
         self.assertEqual(self.find('нтейн'), [])
 
     def test_title_matches_come_first(self):

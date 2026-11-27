@@ -1,4 +1,3 @@
-"""Защита входа, файлов и открытых форм."""
 import base64
 import io
 import shutil

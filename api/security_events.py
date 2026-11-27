@@ -1,7 +1,3 @@
-"""Журнал входов и оповещения о подборе паролей.
-
-Сигнал user_login_failed срабатывает и для входа в админку через API, и для /admin/.
-"""
 import logging
 
 from django.contrib.auth.signals import user_login_failed
@@ -13,15 +9,12 @@ from shop.telegram import send_security_alert
 
 logger = logging.getLogger('security')
 
-# столько неудачных входов за окно считаем подбором пароля
 ALERT_AFTER = 5
 WINDOW_SECONDS = 10 * 60
-# по одному адресу или логину — не больше одного сообщения в час, чтобы не завалить чат
 ALERT_COOLDOWN_SECONDS = 60 * 60
 
 
 def client_ip(request):
-    # адрес определяется так же, как у лимитов: X-Forwarded-For учитывается только за nginx
     return BaseThrottle().get_ident(request) if request is not None else 'unknown'
 
 

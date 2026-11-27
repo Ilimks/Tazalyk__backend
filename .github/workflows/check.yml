@@ -1,0 +1,61 @@
+name: Проверка
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Тесты сервера сайта
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: tazalyk
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DJANGO_SECRET_KEY: ci-only-secret-key-not-used-anywhere-else-0123456789
+      DB_NAME: tazalyk
+      DB_USER: postgres
+      DB_PASSWORD: ci
+      DB_HOST: localhost
+      DB_PORT: "5432"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Зависимости
+        run: pip install -r requirements.txt
+      - name: Настройки Django
+        run: python manage.py check
+      - name: Миграции соответствуют моделям
+        run: python manage.py makemigrations --check --dry-run
+      - name: Тесты
+        run: python manage.py test --noinput
+
+  image:
+    name: Сборка образа
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Docker-образ собирается
+        run: docker build --tag tazalyk-backend:check .

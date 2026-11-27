@@ -1,4 +1,3 @@
-"""Выгрузки в Excel для админки: реестр закупок и отклики на вакансии."""
 import math
 
 from django.utils import timezone
@@ -38,7 +37,6 @@ __all__ = [
     'procurements_export',
 ]
 
-# заголовок, ширина колонки, выравнивание
 COLUMNS = [
     ('№', 8, 'center'),
     ('Номер контракта', 24, 'left'),
@@ -47,12 +45,10 @@ COLUMNS = [
     ('Способ закупки', 30, 'left'),
     ('Статус', 14, 'center'),
     ('Дата', 13, 'center'),
-    # с запасом: если сумма не помещается, Excel показывает ####
     ('Сумма, сом', 28, 'right'),
 ]
 AMOUNT_COLUMN = len(COLUMNS)
 
-# цвет текста и заливки статуса — как значки в админке
 STATUS_COLORS = {
     'active': (GREEN, 'DCFCE7'),
     'completed': ('475569', 'E2E8F0'),
@@ -61,7 +57,6 @@ STATUS_COLORS = {
 
 
 def _procurement_number(procurement):
-    # числом: иначе Excel сортирует 10 раньше 2
     return int(procurement.number) if procurement.number.isdigit() else procurement.number
 
 
@@ -119,11 +114,9 @@ def build_procurements_workbook():
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def procurements_export(request):
-    """GET /api/procurements/export/ — все закупки файлом .xlsx"""
     return xlsx_response(build_procurements_workbook(), f'zakupki-{timezone.localdate():%Y-%m-%d}.xlsx')
 
 
-# ========== ОТКЛИКИ НА ВАКАНСИИ ==========
 APPLICATION_COLUMNS = [
     ('Дата отклика', 17, 'center'),
     ('ФИО', 34, 'left'),
@@ -137,10 +130,8 @@ APPLICATION_COLUMNS = [
 LONG_TEXT_WIDTH = 42
 LINE_HEIGHT = 15
 BASE_ROW_HEIGHT = 21
-# больше Excel не разрешает
 MAX_ROW_HEIGHT = 409
 
-# цвет текста и заливки статуса — как значки в админке
 APPLICATION_STATUS_COLORS = {
     'new': ('1D4ED8', 'DBEAFE'),
     'in_review': ('B45309', 'FEF3C7'),
@@ -158,7 +149,6 @@ def _write_application(sheet, row, application):
     cells = [sheet.cell(row, index) for index in range(1, len(APPLICATION_COLUMNS) + 1)]
     date, name, phone, email, vacancy, status, comment, note = cells
 
-    # Excel не хранит часовой пояс, поэтому время — местное
     date.value = timezone.localtime(application.created_at).replace(tzinfo=None)
     date.number_format = 'DD.MM.YYYY HH:MM'
     set_text(name, application.full_name)
@@ -175,7 +165,6 @@ def _write_application(sheet, row, application):
     status.font = Font(name='Calibri', size=10, bold=True, color=text_color)
     status.fill = solid_fill(fill)
 
-    # длинный комментарий не должен обрезаться высотой строки
     lines = max(_text_lines(application.comment), _text_lines(application.hr_note))
     sheet.row_dimensions[row].height = min(max(BASE_ROW_HEIGHT, lines * LINE_HEIGHT), MAX_ROW_HEIGHT)
 
@@ -207,6 +196,5 @@ def build_applications_workbook():
 
 def applications_export_response():
     response = xlsx_response(build_applications_workbook(), f'otkliki-{timezone.localdate():%Y-%m-%d}.xlsx')
-    # личные данные не должны оставаться в кэше браузера и прокси
     response['Cache-Control'] = 'no-store'
     return response
